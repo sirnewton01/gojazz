@@ -27,6 +27,28 @@ func NewStatus() *Status {
 	return status
 }
 
+func (status *Status) String() string {
+	result := ""
+
+	for k, _ := range status.Added {
+		result = result + k + " (Added)\n"
+	}
+
+	for k, _ := range status.Modified {
+		result = result + k + " (Modified)\n"
+	}
+
+	for k, _ := range status.Deleted {
+		result = result + k + " (Deleted)\n"
+	}
+
+	if result == "" {
+		result = "No local changes\n"
+	}
+
+	return result
+}
+
 func statusOp() {
 	os.Args = os.Args[1:]
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
@@ -44,10 +66,7 @@ func statusOp() {
 	fmt.Printf("Status of %v...\n", *sandboxPath)
 	status, err := scmStatus(*sandboxPath)
 	if err == nil {
-		fmt.Printf("Status successful\n")
-		fmt.Printf("Added %v\n", status.Added)
-		fmt.Printf("Modified %v\n", status.Modified)
-		fmt.Printf("Deleted %v\n", status.Deleted)
+		fmt.Printf("%v\n", status)
 	} else {
 		fmt.Printf("%v\n", err.Error())
 	}
