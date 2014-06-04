@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -25,8 +27,9 @@ type FSObject struct {
 }
 
 type SCMObject struct {
-	ItemId string
-	Type   string
+	ItemId  string
+	StateId string
+	Type    string
 }
 
 type ProjectResults struct {
@@ -136,12 +139,18 @@ func scmLoad(client *Client, project string, sandbox string) error {
 	projectObj.sandboxPath = sandbox
 	projectObj.RTCSCM.Type = "ProjectArea"
 
-	loadChild(client, projectObj, queue, tracker)
+	// Load up existing metadata and prepare fresh metadata
+	oldMetaData := NewMetaData()
+	// If the load fails, it's not a problem, just empty
+	oldMetaData.Load(filepath.Join(sandbox, ".jazzmeta"))
+	newMetaData := NewMetaData()
+
+	loadChild(client, projectObj, queue, tracker, oldMetaData, newMetaData)
 
 	createFiles := func() {
 		for {
 			fsObject := <-queue
-			loadChild(client, fsObject, queue, tracker)
+			loadChild(client, fsObject, queue, tracker, oldMetaData, newMetaData)
 		}
 	}
 
@@ -152,13 +161,19 @@ func scmLoad(client *Client, project string, sandbox string) error {
 
 	<-finished
 
+	newMetaData.Save(filepath.Join(sandbox, ".jazzmeta"))
+
 	return nil
 }
 
-func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker chan int) {
+func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker chan int, oldMetaData *MetaData, newMetaData *MetaData) {
 	client.Log.Printf("Loading %v\n", fsObject.Name)
 
 	url := fsObject.parentUrl
+
+	meta := MetaObject{}
+	meta.ItemId = fsObject.RTCSCM.ItemId
+	meta.StateId = fsObject.RTCSCM.StateId
 
 	// Workspaces, streams and component are addressable only by their Item ID's
 	if fsObject.RTCSCM.Type == "Workspace" || fsObject.RTCSCM.Type == "Component" {
@@ -203,12 +218,20 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 
 		if fsObject.RTCSCM.Type != "ProjectArea" && fsObject.RTCSCM.Type != "Workspace" && fsObject.RTCSCM.Type != "Component" {
 			sandboxPath = filepath.Join(sandboxPath, fsObject.Name)
+			meta.Path = sandboxPath
 
 			// Create the directory if it doesn't already exist
 			err := os.MkdirAll(sandboxPath, 0700)
 			if err != nil {
 				panic(err)
 			}
+
+			info, err := os.Stat(sandboxPath)
+			if err != nil {
+				panic(err)
+			}
+
+			meta.LasModified = info.ModTime().Unix()
 		}
 
 		if fsObject.RTCSCM.Type == "Folder" {
@@ -270,6 +293,22 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 			}(child)
 		}
 	} else {
+		// Check if we need to download anything
+		sandboxPath := filepath.Join(fsObject.sandboxPath, fsObject.Name)
+
+		info, err := os.Stat(sandboxPath)
+		if err == nil {
+			oldMeta := oldMetaData.Get(sandboxPath)
+			if oldMeta.LasModified != 0 && oldMeta.LasModified != info.ModTime().Unix() {
+				fmt.Printf("%v was modified\n", sandboxPath)
+			} else if oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
+				newMetaData.Put(oldMeta)
+				tracker <- -1
+				return
+			}
+		}
+
+		// Too bad, we need to download the contents
 		request, err := http.NewRequest("GET", url+"?op=readContent", nil)
 
 		if err != nil {
@@ -289,13 +328,17 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 			panic("Error")
 		}
 
-		file, err := os.Create(filepath.Join(fsObject.sandboxPath, fsObject.Name))
+		file, err := os.Create(sandboxPath)
 
 		if err != nil {
 			panic(err)
 		}
 
-		_, err = io.Copy(file, resp.Body)
+		// Setup the SHA-1 hash of the file contents
+		hash := sha1.New()
+		tee := io.MultiWriter(file, hash)
+
+		_, err = io.Copy(tee, resp.Body)
 
 		if err != nil {
 			panic(err)
@@ -303,6 +346,19 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 
 		resp.Body.Close()
 		file.Close()
+
+		meta.Path = sandboxPath
+		info, err = os.Stat(sandboxPath)
+		if err != nil {
+			panic(err)
+		}
+		meta.LasModified = info.ModTime().Unix()
+		meta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
+		meta.Size = info.Size()
+	}
+
+	if meta.Path != "" {
+		newMetaData.Put(meta)
 	}
 
 	// This task is done
