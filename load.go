@@ -299,12 +299,11 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 
 		_, err := os.Stat(sandboxPath)
 		if err == nil {
+			// User modified the file
 			if status.Modified[sandboxPath] {
 				fmt.Printf("%v was modified and is overwritten\n", sandboxPath)
-			}
-
-			// Skip writing files that already exist and are in the same state as before
-			if status.metaData != nil {
+			} else if status.metaData != nil {
+				// The file is unchanged locally and in the repository
 				oldMeta := status.metaData.Get(sandboxPath)
 
 				if oldMeta.Path != "" && oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
