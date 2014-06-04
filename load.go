@@ -139,18 +139,19 @@ func scmLoad(client *Client, project string, sandbox string) error {
 	projectObj.sandboxPath = sandbox
 	projectObj.RTCSCM.Type = "ProjectArea"
 
-	// Load up existing metadata and prepare fresh metadata
-	oldMetaData := NewMetaData()
-	// If the load fails, it's not a problem, just empty
-	oldMetaData.Load(filepath.Join(sandbox, ".jazzmeta"))
+	// Get the existing status of the sandbox, if available
+	status, err := scmStatus(sandbox)
+	if err != nil {
+		status = NewStatus()
+	}
 	newMetaData := NewMetaData()
 
-	loadChild(client, projectObj, queue, tracker, oldMetaData, newMetaData)
+	loadChild(client, projectObj, queue, tracker, status, newMetaData)
 
 	createFiles := func() {
 		for {
 			fsObject := <-queue
-			loadChild(client, fsObject, queue, tracker, oldMetaData, newMetaData)
+			loadChild(client, fsObject, queue, tracker, status, newMetaData)
 		}
 	}
 
@@ -166,7 +167,7 @@ func scmLoad(client *Client, project string, sandbox string) error {
 	return nil
 }
 
-func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker chan int, oldMetaData *MetaData, newMetaData *MetaData) {
+func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker chan int, status *Status, newMetaData *MetaData) {
 	client.Log.Printf("Loading %v\n", fsObject.Name)
 
 	url := fsObject.parentUrl
@@ -296,15 +297,21 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 		// Check if we need to download anything
 		sandboxPath := filepath.Join(fsObject.sandboxPath, fsObject.Name)
 
-		info, err := os.Stat(sandboxPath)
+		_, err := os.Stat(sandboxPath)
 		if err == nil {
-			oldMeta := oldMetaData.Get(sandboxPath)
-			if oldMeta.LasModified != 0 && oldMeta.LasModified != info.ModTime().Unix() {
-				fmt.Printf("%v was modified\n", sandboxPath)
-			} else if oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
-				newMetaData.Put(oldMeta)
-				tracker <- -1
-				return
+			if status.Modified[sandboxPath] {
+				fmt.Printf("%v was modified and is overwritten\n", sandboxPath)
+			}
+
+			// Skip writing files that already exist and are in the same state as before
+			if status.metaData != nil {
+				oldMeta := status.metaData.Get(sandboxPath)
+
+				if oldMeta.Path != "" && oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
+					newMetaData.Put(oldMeta)
+					tracker <- -1
+					return
+				}
 			}
 		}
 
@@ -348,7 +355,7 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 		file.Close()
 
 		meta.Path = sandboxPath
-		info, err = os.Stat(sandboxPath)
+		info, err := os.Stat(sandboxPath)
 		if err != nil {
 			panic(err)
 		}

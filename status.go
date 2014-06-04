@@ -12,9 +12,19 @@ import (
 )
 
 type Status struct {
-	Added    []string
-	Modified []string
-	Deleted  []string
+	Added    map[string]bool
+	Modified map[string]bool
+	Deleted  map[string]bool
+	metaData *MetaData
+}
+
+func NewStatus() *Status {
+	status := &Status{}
+	status.Added = make(map[string]bool)
+	status.Modified = make(map[string]bool)
+	status.Deleted = make(map[string]bool)
+
+	return status
 }
 
 func statusOp() {
@@ -53,7 +63,8 @@ func scmStatus(sandboxPath string) (*Status, error) {
 		return nil, err
 	}
 
-	status := &Status{}
+	status := NewStatus()
+	status.metaData = oldMetaData
 
 	// Walk the current directory structure looking for Added and Modified items
 	err = filepath.Walk(sandboxPath, func(path string, info os.FileInfo, err error) error {
@@ -70,7 +81,7 @@ func scmStatus(sandboxPath string) (*Status, error) {
 
 		// Metadata doesn't exist for this file, so it must be added
 		if meta.Path == "" {
-			status.Added = append(status.Added, path)
+			status.Added[path] = true
 			return nil
 		}
 
@@ -79,7 +90,7 @@ func scmStatus(sandboxPath string) (*Status, error) {
 			if meta.LasModified != info.ModTime().Unix() {
 				// Different sizes mean that the file has changed for sure
 				if meta.Size != info.Size() {
-					status.Modified = append(status.Modified, path)
+					status.Modified[path] = true
 				} else {
 					// Check the hashes
 					file, err := os.Open(path)
@@ -95,7 +106,7 @@ func scmStatus(sandboxPath string) (*Status, error) {
 					}
 
 					if meta.Hash != base64.StdEncoding.EncodeToString(hash.Sum(nil)) {
-						status.Modified = append(status.Modified, path)
+						status.Modified[path] = true
 					}
 				}
 			}
@@ -112,7 +123,7 @@ func scmStatus(sandboxPath string) (*Status, error) {
 	for path, _ := range oldMetaData.pathMap {
 		_, err := os.Stat(path)
 		if err != nil {
-			status.Deleted = append(status.Deleted, path)
+			status.Deleted[path] = true
 		}
 	}
 
