@@ -27,6 +27,10 @@ func NewStatus() *Status {
 	return status
 }
 
+func (status *Status) unchanged() bool {
+	return len(status.Added) == 0 && len(status.Modified) == 0 && len(status.Deleted) == 0
+}
+
 func (status *Status) String() string {
 	result := ""
 

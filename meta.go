@@ -13,19 +13,20 @@ type MetaObject struct {
 	LasModified int64
 	Size        int64
 	Hash        string
-	Children    []string
 }
 
 type MetaData struct {
-	pathMap   map[string]MetaObject
-	storeMeta chan MetaObject
-	sync      chan int
+	pathMap       map[string]MetaObject
+	componentEtag map[string]string
+	storeMeta     chan MetaObject
+	sync          chan int
 }
 
 func NewMetaData() *MetaData {
 	metadata := &MetaData{}
 
 	metadata.pathMap = make(map[string]MetaObject)
+	metadata.componentEtag = make(map[string]string)
 	metadata.storeMeta = make(chan MetaObject)
 	metadata.sync = make(chan int)
 
@@ -49,6 +50,7 @@ func (metadata *MetaData) Load(path string) error {
 	if err == nil {
 		decoder := gob.NewDecoder(file)
 		err = decoder.Decode(&metadata.pathMap)
+		err = decoder.Decode(&metadata.componentEtag)
 	}
 
 	return err
@@ -62,6 +64,7 @@ func (metadata *MetaData) Save(path string) error {
 	if err == nil {
 		encoder := gob.NewEncoder(file)
 		err = encoder.Encode(&metadata.pathMap)
+		err = encoder.Encode(&metadata.componentEtag)
 	}
 
 	return err

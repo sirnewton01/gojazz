@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/howeyc/gopass"
 )
@@ -24,6 +25,7 @@ type FSObject struct {
 	Children    []FSObject
 	parentUrl   string
 	sandboxPath string
+	etag        string
 }
 
 type SCMObject struct {
@@ -140,10 +142,7 @@ func scmLoad(client *Client, project string, sandbox string) error {
 	projectObj.RTCSCM.Type = "ProjectArea"
 
 	// Get the existing status of the sandbox, if available
-	status, err := scmStatus(sandbox)
-	if err != nil {
-		status = NewStatus()
-	}
+	status, _ := scmStatus(sandbox)
 	newMetaData := NewMetaData()
 
 	loadChild(client, projectObj, queue, tracker, status, newMetaData)
@@ -165,6 +164,15 @@ func scmLoad(client *Client, project string, sandbox string) error {
 	newMetaData.Save(filepath.Join(sandbox, ".jazzmeta"))
 
 	return nil
+}
+
+func extractComponentEtag(rawEtag string) string {
+	rawEtag = strings.Replace(rawEtag, "\"", "", -1)
+	if rawEtag != "" {
+		rawEtag = strings.Split(rawEtag, " ")[1]
+	}
+
+	return rawEtag
 }
 
 func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker chan int, status *Status, newMetaData *MetaData) {
@@ -197,6 +205,31 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 			panic(err)
 		}
 
+		etag := extractComponentEtag(resp.Header.Get("ETag"))
+
+		if fsObject.etag != "" && fsObject.etag != etag {
+			panic("Stream has changed while updating")
+		}
+
+		// Optimization, skip loading a component if there are no changes
+		//  and the etag is the same as last time.
+		if fsObject.RTCSCM.Type == "Component" {
+			componentId := fsObject.RTCSCM.ItemId
+
+			newMetaData.componentEtag[componentId] = etag
+
+			if status != nil && status.unchanged() && status.metaData.componentEtag[componentId] == etag {
+				// FIXME this optimization does _not_ work for multiple components
+
+				for k, v := range status.metaData.pathMap {
+					newMetaData.pathMap[k] = v
+				}
+
+				tracker <- -1
+				return
+			}
+		}
+
 		projectObj := &FSObject{}
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -208,10 +241,10 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 		}
 
 		if resp.StatusCode != 200 {
-			fmt.Printf("Error Loading %v/%v\n", fsObject.sandboxPath, fsObject.Name)
-			client.Log.Printf("Response Status: %v\n", resp.StatusCode)
+			fmt.Printf("Error Loading %v\n", url)
+			fmt.Printf("Response Status: %v\n", resp.StatusCode)
 			b, _ := ioutil.ReadAll(resp.Body)
-			client.Log.Printf("Response Body:\n%v\n", string(b))
+			fmt.Printf("Response Body:\n%v\n", string(b))
 			panic("Error")
 		}
 
@@ -276,6 +309,7 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 			for _, child := range projectObj.Children {
 				child.parentUrl = url
 				child.sandboxPath = sandboxPath
+				child.etag = etag
 				go func(child FSObject) {
 					queue <- child
 				}(child)
@@ -298,7 +332,7 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 		sandboxPath := filepath.Join(fsObject.sandboxPath, fsObject.Name)
 
 		_, err := os.Stat(sandboxPath)
-		if err == nil {
+		if err == nil && status != nil {
 			// User modified the file
 			if status.Modified[sandboxPath] {
 				fmt.Printf("%v was modified and is overwritten\n", sandboxPath)
@@ -324,6 +358,11 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 		resp, err := client.Do(request)
 		if err != nil {
 			panic(err)
+		}
+
+		etag := extractComponentEtag(resp.Header.Get("ETag"))
+		if fsObject.etag != "" && fsObject.etag != etag {
+			panic("Stream has changed while updating")
 		}
 
 		if resp.StatusCode != 200 {
