@@ -54,6 +54,7 @@ func loadOp() {
 	os.Args = os.Args[2:]
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
+	overwrite := flag.Bool("force", false, "Force overwrite of any local changes")
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -62,6 +63,7 @@ func loadOp() {
 			panic(err)
 		}
 
+		path = findSandbox(path)
 		sandboxPath = &path
 	}
 
@@ -80,7 +82,7 @@ func loadOp() {
 	}
 
 	fmt.Printf("Loading '%v' into %v...\n", *projectName, *sandboxPath)
-	err = scmLoad(client, *projectName, *sandboxPath)
+	err = scmLoad(client, *projectName, *sandboxPath, *overwrite)
 	if err == nil {
 		fmt.Printf("Load successful\n")
 	} else {
@@ -88,7 +90,7 @@ func loadOp() {
 	}
 }
 
-func scmLoad(client *Client, project string, sandbox string) error {
+func scmLoad(client *Client, project string, sandbox string, overwrite bool) error {
 	projectEscaped := url.QueryEscape(project)
 
 	// Discover the RTC repo for this project
@@ -143,14 +145,24 @@ func scmLoad(client *Client, project string, sandbox string) error {
 
 	// Get the existing status of the sandbox, if available
 	status, _ := scmStatus(sandbox)
-	newMetaData := NewMetaData()
 
-	loadChild(client, projectObj, queue, tracker, status, newMetaData)
+	if !overwrite && status != nil && !status.unchanged() {
+		return errors.New("There are local changes, aborting. Use the status subcommand to find the changes. Try again with '-force=true' to overwrite")
+	}
+
+	if status != nil && !status.unchanged() {
+		fmt.Printf("Overwriting these files:\n %v", status)
+	}
+
+	newMetaData := NewMetaData()
+	newMetaData.InitConcurrentWrite()
+
+	loadChild(client, sandbox, projectObj, queue, tracker, status, newMetaData)
 
 	createFiles := func() {
 		for {
 			fsObject := <-queue
-			loadChild(client, fsObject, queue, tracker, status, newMetaData)
+			loadChild(client, sandbox, fsObject, queue, tracker, status, newMetaData)
 		}
 	}
 
@@ -175,7 +187,7 @@ func extractComponentEtag(rawEtag string) string {
 	return rawEtag
 }
 
-func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker chan int, status *Status, newMetaData *MetaData) {
+func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSObject, tracker chan int, status *Status, newMetaData *MetaData) {
 	client.Log.Printf("Loading %v\n", fsObject.Name)
 
 	url := fsObject.parentUrl
@@ -338,10 +350,10 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 				fmt.Printf("%v was modified and is overwritten\n", sandboxPath)
 			} else if status.metaData != nil {
 				// The file is unchanged locally and in the repository
-				oldMeta := status.metaData.Get(sandboxPath)
+				oldMeta, ok := status.metaData.Get(sandboxPath, sandbox)
 
-				if oldMeta.Path != "" && oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
-					newMetaData.Put(oldMeta)
+				if ok && oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
+					newMetaData.Put(oldMeta, sandbox)
 					tracker <- -1
 					return
 				}
@@ -403,7 +415,7 @@ func loadChild(client *Client, fsObject FSObject, queue chan FSObject, tracker c
 	}
 
 	if meta.Path != "" {
-		newMetaData.Put(meta)
+		newMetaData.Put(meta, sandbox)
 	}
 
 	// This task is done

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -64,6 +65,7 @@ func statusOp() {
 			panic(err)
 		}
 
+		path = findSandbox(path)
 		sandboxPath = &path
 	}
 
@@ -83,7 +85,7 @@ func scmStatus(sandboxPath string) (*Status, error) {
 	err := oldMetaData.Load(filepath.Join(sandboxPath, ".jazzmeta"))
 
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Not a sandbox")
 	}
 
 	status := NewStatus()
@@ -100,10 +102,10 @@ func scmStatus(sandboxPath string) (*Status, error) {
 			return nil
 		}
 
-		meta := oldMetaData.Get(path)
+		meta, ok := oldMetaData.Get(path, sandboxPath)
 
 		// Metadata doesn't exist for this file, so it must be added
-		if meta.Path == "" {
+		if !ok {
 			status.Added[path] = true
 			return nil
 		}
@@ -144,7 +146,7 @@ func scmStatus(sandboxPath string) (*Status, error) {
 
 	// Walk the metadata to find any items that don't exist
 	for path, _ := range oldMetaData.pathMap {
-		_, err := os.Stat(path)
+		_, err := os.Stat(filepath.Join(sandboxPath, path))
 		if err != nil {
 			status.Deleted[path] = true
 		}
