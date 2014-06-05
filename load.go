@@ -55,6 +55,7 @@ func loadOp() {
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
 	overwrite := flag.Bool("force", false, "Force overwrite of any local changes")
+	stream := flag.String("stream", "", "Alternate stream to load")
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -82,7 +83,7 @@ func loadOp() {
 	}
 
 	fmt.Printf("Loading '%v' into %v...\n", *projectName, *sandboxPath)
-	err = scmLoad(client, *projectName, *sandboxPath, *overwrite)
+	err = scmLoad(client, *projectName, *sandboxPath, *overwrite, *stream)
 	if err == nil {
 		fmt.Printf("Load successful\n")
 	} else {
@@ -90,7 +91,7 @@ func loadOp() {
 	}
 }
 
-func scmLoad(client *Client, project string, sandbox string, overwrite bool) error {
+func scmLoad(client *Client, project string, sandbox string, overwrite bool, stream string) error {
 	projectEscaped := url.QueryEscape(project)
 
 	// Discover the RTC repo for this project
@@ -121,6 +122,54 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool) err
 	}
 
 	orion_fs := results.Projects[0].CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
+	projecturl := orion_fs + "/" + project
+
+	// Fetch all of the streams from the project
+	request, err = http.NewRequest("GET", projecturl, nil)
+	if err != nil {
+		panic(err)
+	}
+	resp, err = client.Do(request)
+	if err != nil {
+		panic(err)
+	}
+	projectObj := &FSObject{}
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	err = json.Unmarshal(b, projectObj)
+	if err != nil {
+		panic(err)
+	}
+
+	var streamObj FSObject
+	for _, childStream := range projectObj.Children {
+		if childStream.Name == stream {
+			streamObj = childStream
+			break
+		}
+
+		// The default stream for a project has the form "user | projectName Stream"
+		if stream == "" && childStream.Name == project+" Stream" {
+			streamObj = childStream
+		}
+	}
+
+	// Still no stream found, fail if user specified a stream, pick the first one otherwise
+	if streamObj.Name == "" {
+		if stream != "" {
+			return errors.New("Stream with name " + stream + " not found")
+		}
+
+		if len(projectObj.Children) == 0 {
+			return errors.New("No default stream could be found for this project. Is it a Git project?")
+		}
+		streamObj = projectObj.Children[0]
+	}
+
+	streamObj.sandboxPath = sandbox
+	streamObj.parentUrl = projecturl
 
 	queue := make(chan FSObject)
 
@@ -136,13 +185,6 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool) err
 		finished <- true
 	}()
 
-	projectObj := FSObject{}
-	projectObj.Name = project
-	projectObj.parentUrl = orion_fs
-	projectObj.Directory = true
-	projectObj.sandboxPath = sandbox
-	projectObj.RTCSCM.Type = "ProjectArea"
-
 	// Get the existing status of the sandbox, if available
 	status, _ := scmStatus(sandbox)
 
@@ -157,7 +199,7 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool) err
 	newMetaData := NewMetaData()
 	newMetaData.InitConcurrentWrite()
 
-	loadChild(client, sandbox, projectObj, queue, tracker, status, newMetaData)
+	loadChild(client, sandbox, streamObj, queue, tracker, status, newMetaData)
 
 	createFiles := func() {
 		for {
@@ -262,7 +304,9 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 
 		resp.Body.Close()
 
-		if fsObject.RTCSCM.Type != "ProjectArea" && fsObject.RTCSCM.Type != "Workspace" && fsObject.RTCSCM.Type != "Component" {
+		// Workspaces and component don't get their own directory, the children are loaded directly
+		//  underneath the sandbox root.
+		if fsObject.RTCSCM.Type != "Workspace" && fsObject.RTCSCM.Type != "Component" {
 			sandboxPath = filepath.Join(sandboxPath, fsObject.Name)
 			meta.Path = sandboxPath
 
@@ -314,27 +358,12 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 			}
 		}
 
-		// Pick the first child stream of a project area
-		if fsObject.RTCSCM.Type != "ProjectArea" {
-			// Add new tasks for each of the children
-			tracker <- len(projectObj.Children)
-			for _, child := range projectObj.Children {
-				child.parentUrl = url
-				child.sandboxPath = sandboxPath
-				child.etag = etag
-				go func(child FSObject) {
-					queue <- child
-				}(child)
-			}
-		} else {
-			if len(projectObj.Children) == 0 {
-				panic("No streams for this project")
-			}
-
-			tracker <- 1
-			child := projectObj.Children[0]
+		// Add new tasks for each of the children
+		tracker <- len(projectObj.Children)
+		for _, child := range projectObj.Children {
 			child.parentUrl = url
 			child.sandboxPath = sandboxPath
+			child.etag = etag
 			go func(child FSObject) {
 				queue <- child
 			}(child)

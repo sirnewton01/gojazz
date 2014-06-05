@@ -72,9 +72,9 @@ func statusOp() {
 	fmt.Printf("Status of %v...\n", *sandboxPath)
 	status, err := scmStatus(*sandboxPath)
 	if err == nil {
-		fmt.Printf("%v\n", status)
+		fmt.Printf("%v", status)
 	} else {
-		fmt.Printf("%v\n", err.Error())
+		fmt.Printf("%v", err.Error())
 	}
 }
 
