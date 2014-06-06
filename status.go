@@ -9,18 +9,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
-type Status struct {
+type status struct {
 	Added    map[string]bool
 	Modified map[string]bool
 	Deleted  map[string]bool
-	metaData *MetaData
+	metaData *metaData
 }
 
-func NewStatus() *Status {
-	status := &Status{}
+func newStatus() *status {
+	status := &status{}
 	status.Added = make(map[string]bool)
 	status.Modified = make(map[string]bool)
 	status.Deleted = make(map[string]bool)
@@ -28,11 +27,11 @@ func NewStatus() *Status {
 	return status
 }
 
-func (status *Status) unchanged() bool {
+func (status *status) unchanged() bool {
 	return len(status.Added) == 0 && len(status.Modified) == 0 && len(status.Deleted) == 0
 }
 
-func (status *Status) String() string {
+func (status *status) String() string {
 	result := ""
 
 	for k, _ := range status.Added {
@@ -78,17 +77,17 @@ func statusOp() {
 	}
 }
 
-func scmStatus(sandboxPath string) (*Status, error) {
+func scmStatus(sandboxPath string) (*status, error) {
 	// Load up existing metadata and prepare fresh metadata
-	oldMetaData := NewMetaData()
+	oldMetaData := newMetaData()
 	// If the load fails, it's not a problem, just empty
-	err := oldMetaData.Load(filepath.Join(sandboxPath, ".jazzmeta"))
+	err := oldMetaData.load(filepath.Join(sandboxPath, metadataFileName))
 
 	if err != nil {
 		return nil, errors.New("Not a sandbox")
 	}
 
-	status := NewStatus()
+	status := newStatus()
 	status.metaData = oldMetaData
 
 	// Walk the current directory structure looking for Added and Modified items
@@ -98,11 +97,11 @@ func scmStatus(sandboxPath string) (*Status, error) {
 		}
 
 		// Skip the metadata
-		if path == sandboxPath || strings.HasSuffix(path, ".jazzmeta") {
+		if path == sandboxPath || filepath.Base(path) == metadataFileName {
 			return nil
 		}
 
-		meta, ok := oldMetaData.Get(path, sandboxPath)
+		meta, ok := oldMetaData.get(path, sandboxPath)
 
 		// Metadata doesn't exist for this file, so it must be added
 		if !ok {

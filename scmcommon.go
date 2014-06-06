@@ -16,7 +16,7 @@ func findSandbox(startingPath string) (path string) {
 	path = filepath.Clean(path)
 
 	for path != "." && !strings.HasSuffix(path, "/") {
-		_, err = os.Stat(filepath.Join(path, ".jazzmeta"))
+		_, err = os.Stat(filepath.Join(path, metadataFileName))
 		if err == nil {
 			return path
 		}

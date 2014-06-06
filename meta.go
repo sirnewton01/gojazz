@@ -6,8 +6,12 @@ import (
 	"path/filepath"
 )
 
+const (
+	metadataFileName = ".jazzmeta"
+)
+
 // TODO convert into a smaller object
-type MetaObject struct {
+type metaObject struct {
 	Path        string
 	ItemId      string
 	StateId     string
@@ -16,19 +20,19 @@ type MetaObject struct {
 	Hash        string
 }
 
-type MetaData struct {
-	pathMap       map[string]MetaObject
+type metaData struct {
+	pathMap       map[string]metaObject
 	componentEtag map[string]string
 
 	inited    bool
-	storeMeta chan MetaObject
+	storeMeta chan metaObject
 	sync      chan int
 }
 
-func NewMetaData() *MetaData {
-	metadata := &MetaData{}
+func newMetaData() *metaData {
+	metadata := &metaData{}
 
-	metadata.pathMap = make(map[string]MetaObject)
+	metadata.pathMap = make(map[string]metaObject)
 	metadata.componentEtag = make(map[string]string)
 
 	metadata.inited = false
@@ -36,7 +40,7 @@ func NewMetaData() *MetaData {
 	return metadata
 }
 
-func (metadata *MetaData) Load(path string) error {
+func (metadata *metaData) load(path string) error {
 	file, err := os.Open(path)
 	if err == nil {
 		decoder := gob.NewDecoder(file)
@@ -47,7 +51,7 @@ func (metadata *MetaData) Load(path string) error {
 	return err
 }
 
-func (metadata *MetaData) Save(path string) error {
+func (metadata *metaData) save(path string) error {
 	if metadata.inited {
 		// Synchronize first and then write out the metadata
 		metadata.sync <- 1
@@ -63,8 +67,8 @@ func (metadata *MetaData) Save(path string) error {
 	return err
 }
 
-func (metadata *MetaData) InitConcurrentWrite() {
-	metadata.storeMeta = make(chan MetaObject)
+func (metadata *metaData) initConcurrentWrite() {
+	metadata.storeMeta = make(chan metaObject)
 	metadata.sync = make(chan int)
 
 	metadata.inited = true
@@ -83,7 +87,7 @@ func (metadata *MetaData) InitConcurrentWrite() {
 	}()
 }
 
-func (metadata *MetaData) Put(obj MetaObject, sandboxpath string) {
+func (metadata *metaData) put(obj metaObject, sandboxpath string) {
 	if !metadata.inited {
 		panic("Metadata is not initialized for concurrent write, call InitConcurentWrite() first.")
 	}
@@ -101,7 +105,7 @@ func (metadata *MetaData) Put(obj MetaObject, sandboxpath string) {
 	metadata.storeMeta <- obj
 }
 
-func (metadata *MetaData) Get(path string, sandboxpath string) (MetaObject, bool) {
+func (metadata *metaData) get(path string, sandboxpath string) (metaObject, bool) {
 	// All metadata lookups are based on relative path
 	relpath, err := filepath.Rel(sandboxpath, path)
 

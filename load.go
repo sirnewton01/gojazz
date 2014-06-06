@@ -113,9 +113,7 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 	if err != nil {
 		return err
 	}
-
 	results := &ProjectResults{}
-
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
@@ -204,8 +202,11 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		fmt.Printf("Overwriting these files:\n %v", status)
 	}
 
-	newMetaData := NewMetaData()
-	newMetaData.InitConcurrentWrite()
+	// Delete the old metadata
+	os.Remove(filepath.Join(sandbox, metadataFileName))
+
+	newMetaData := newMetaData()
+	newMetaData.initConcurrentWrite()
 
 	loadChild(client, sandbox, streamObj, queue, tracker, status, newMetaData)
 
@@ -223,7 +224,27 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 
 	<-finished
 
-	newMetaData.Save(filepath.Join(sandbox, ".jazzmeta"))
+	// As a last pass, check all of the files at the top of the sandbox to verify
+	//  that they are in the metadata. They are either detached from the stream contents
+	//  or were added by the user. Either way, they should be deleted.
+	dir, err := os.Open(sandbox)
+	if err != nil {
+		panic(err)
+	}
+	roots, err := dir.Readdirnames(-1)
+	if err != nil {
+		panic(err)
+	}
+	for _, root := range roots {
+		if _, ok := newMetaData.get(filepath.Join(sandbox, root), sandbox); !ok {
+			err = os.RemoveAll(root)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	newMetaData.save(filepath.Join(sandbox, metadataFileName))
 
 	return nil
 }
@@ -237,12 +258,12 @@ func extractComponentEtag(rawEtag string) string {
 	return rawEtag
 }
 
-func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSObject, tracker chan int, status *Status, newMetaData *MetaData) {
+func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSObject, tracker chan int, status *status, newMetaData *metaData) {
 	client.Log.Printf("Loading %v\n", fsObject.Name)
 
 	url := fsObject.parentUrl
 
-	meta := MetaObject{}
+	meta := metaObject{}
 	meta.ItemId = fsObject.RTCSCM.ItemId
 	meta.StateId = fsObject.RTCSCM.StateId
 
@@ -292,12 +313,12 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 			}
 		}
 
-		projectObj := &FSObject{}
+		directoryObj := &FSObject{}
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			panic(err)
 		}
-		err = json.Unmarshal(b, projectObj)
+		err = json.Unmarshal(b, directoryObj)
 		if err != nil {
 			panic(err)
 		}
@@ -335,7 +356,6 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 		if fsObject.RTCSCM.Type == "Folder" {
 			// If this is a folder (not project area, workspace or component) then delete
 			//  any extra children files/folders on disk
-			// TODO this would be a good candidate for a shed to put extra stuff that the user may care about
 
 			dir, err := os.Open(sandboxPath)
 			if err != nil {
@@ -349,7 +369,7 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 
 			for _, child := range children {
 				found := false
-				for _, remoteChild := range projectObj.Children {
+				for _, remoteChild := range directoryObj.Children {
 					if remoteChild.Name == child {
 						found = true
 						break
@@ -367,8 +387,8 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 		}
 
 		// Add new tasks for each of the children
-		tracker <- len(projectObj.Children)
-		for _, child := range projectObj.Children {
+		tracker <- len(directoryObj.Children)
+		for _, child := range directoryObj.Children {
 			child.parentUrl = url
 			child.sandboxPath = sandboxPath
 			child.etag = etag
@@ -394,10 +414,10 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 				fmt.Printf("%v was modified and is overwritten\n", sandboxPath)
 			} else if status.metaData != nil {
 				// The file is unchanged locally and in the repository
-				oldMeta, ok := status.metaData.Get(sandboxPath, sandbox)
+				oldMeta, ok := status.metaData.get(sandboxPath, sandbox)
 
 				if ok && oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
-					newMetaData.Put(oldMeta, sandbox)
+					newMetaData.put(oldMeta, sandbox)
 					tracker <- -1
 					return
 				}
@@ -459,7 +479,7 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 	}
 
 	if meta.Path != "" {
-		newMetaData.Put(meta, sandbox)
+		newMetaData.put(meta, sandbox)
 	}
 
 	// This task is done
