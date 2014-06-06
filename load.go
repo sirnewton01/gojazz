@@ -108,10 +108,15 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 	if err != nil {
 		return err
 	}
-
 	resp, err := client.Do(request)
 	if err != nil {
 		return err
+	}
+	if resp.StatusCode != 200 {
+		fmt.Printf("Response Status: %v\n", resp.StatusCode)
+		b, _ := ioutil.ReadAll(resp.Body)
+		fmt.Printf("Response Body\n%v\n", string(b))
+		panic("Error")
 	}
 	results := &ProjectResults{}
 	b, err := ioutil.ReadAll(resp.Body)
@@ -138,6 +143,12 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 	resp, err = client.Do(request)
 	if err != nil {
 		panic(err)
+	}
+	if resp.StatusCode != 200 {
+		fmt.Printf("Response Status: %v\n", resp.StatusCode)
+		b, _ := ioutil.ReadAll(resp.Body)
+		fmt.Printf("Response Body\n%v\n", string(b))
+		panic("Error")
 	}
 	projectObj := &FSObject{}
 	b, err = ioutil.ReadAll(resp.Body)
