@@ -18,6 +18,11 @@ import (
 	"github.com/howeyc/gopass"
 )
 
+const (
+	numGoRoutines = 15
+	bufferSize    = 1000
+)
+
 type FSObject struct {
 	Name        string
 	Directory   bool
@@ -83,6 +88,9 @@ func loadOp() {
 	}
 
 	fmt.Printf("Loading '%v' into %v...\n", *projectName, *sandboxPath)
+	if *stream != "" {
+		fmt.Printf("Stream is %v\n", *stream)
+	}
 	err = scmLoad(client, *projectName, *sandboxPath, *overwrite, *stream)
 	if err == nil {
 		fmt.Printf("Load successful\n")
@@ -171,7 +179,7 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 	streamObj.sandboxPath = sandbox
 	streamObj.parentUrl = projecturl
 
-	queue := make(chan FSObject)
+	queue := make(chan FSObject, bufferSize)
 
 	// Track how much work needs to be done and send a signal on the
 	//  finished channel when its done
@@ -364,9 +372,16 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 			child.parentUrl = url
 			child.sandboxPath = sandboxPath
 			child.etag = etag
-			go func(child FSObject) {
-				queue <- child
-			}(child)
+
+			// Try queueing the child for another goroutine to handle it
+			// Otherwise, we will recurse depth-first ourselves to make sure
+			//  that we don't deadlock
+			select {
+			case queue <- child:
+				break
+			default:
+				loadChild(client, sandbox, child, queue, tracker, status, newMetaData)
+			}
 		}
 	} else {
 		// Check if we need to download anything

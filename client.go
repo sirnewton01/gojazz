@@ -15,7 +15,6 @@ import (
 
 const (
 	jazzHubBaseUrl = "https://hub.jazz.net"
-	numGoRoutines  = 10
 )
 
 // A client for making http requests against a Jazz server with the provided credentials
