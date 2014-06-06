@@ -288,10 +288,17 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 			panic(err)
 		}
 
-		etag := extractComponentEtag(resp.Header.Get("ETag"))
+		if resp.StatusCode != 200 {
+			fmt.Printf("Error Loading %v\n", url)
+			fmt.Printf("Response Status: %v\n", resp.StatusCode)
+			b, _ := ioutil.ReadAll(resp.Body)
+			fmt.Printf("Response Body:\n%v\n", string(b))
+			panic("Error")
+		}
 
+		etag := extractComponentEtag(resp.Header.Get("ETag"))
 		if fsObject.etag != "" && fsObject.etag != etag {
-			panic("Stream has changed while updating")
+			panic("Stream has changed while updating:" + fsObject.etag + " " + etag)
 		}
 
 		// Optimization, skip loading a component if there are no changes
@@ -321,14 +328,6 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 		err = json.Unmarshal(b, directoryObj)
 		if err != nil {
 			panic(err)
-		}
-
-		if resp.StatusCode != 200 {
-			fmt.Printf("Error Loading %v\n", url)
-			fmt.Printf("Response Status: %v\n", resp.StatusCode)
-			b, _ := ioutil.ReadAll(resp.Body)
-			fmt.Printf("Response Body:\n%v\n", string(b))
-			panic("Error")
 		}
 
 		resp.Body.Close()
@@ -436,17 +435,17 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 			panic(err)
 		}
 
-		etag := extractComponentEtag(resp.Header.Get("ETag"))
-		if fsObject.etag != "" && fsObject.etag != etag {
-			panic("Stream has changed while updating")
-		}
-
 		if resp.StatusCode != 200 {
 			fmt.Printf("Error Loading %v/%v\n", fsObject.sandboxPath, fsObject.Name)
-			client.Log.Printf("Response Status: %v\n", resp.StatusCode)
+			fmt.Printf("Response Status: %v\n", resp.StatusCode)
 			b, _ := ioutil.ReadAll(resp.Body)
-			client.Log.Printf("Response Body\n%v\n", string(b))
+			fmt.Printf("Response Body\n%v\n", string(b))
 			panic("Error")
+		}
+
+		etag := extractComponentEtag(resp.Header.Get("ETag"))
+		if fsObject.etag != "" && fsObject.etag != etag {
+			panic("Stream has changed while updating: " + fsObject.etag + " " + etag)
 		}
 
 		file, err := os.Create(sandboxPath)
