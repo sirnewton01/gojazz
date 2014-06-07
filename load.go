@@ -51,8 +51,10 @@ type Project struct {
 func loadOp() {
 	var projectName string
 
-	stream := ""
-	workspace := false
+	streamDef := ""
+	stream := &streamDef
+	workspaceDef := false
+	workspace := &workspaceDef
 
 	// Project name provided
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
@@ -60,8 +62,8 @@ func loadOp() {
 		os.Args = os.Args[1:]
 
 		// Providing a workspace or stream is only valid in the context of a project
-		stream = *flag.String("stream", "", "Alternate stream to load")
-		workspace = *flag.Bool("workspace", false, "Use a repository workspace to check-in changes (requires authentication).")
+		stream = flag.String("stream", "", "Alternate stream to load")
+		workspace = flag.Bool("workspace", false, "Use a repository workspace to check-in changes (requires authentication).")
 	}
 
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
@@ -86,18 +88,19 @@ func loadOp() {
 		password = string(gopass.GetPasswd())
 	}
 
+	if *workspace && *userId == "" {
+		fmt.Printf("You must provide credentials to use a repository workspace\n")
+		return
+	}
+
 	// Assemble a client with the user credentials
 	client, err := NewClient(*userId, password)
-
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Printf("Loading into %v...\n", *sandboxPath)
-	if stream != "" {
-		fmt.Printf("Stream is %v\n", stream)
-	}
-	err = scmLoad(client, projectName, *sandboxPath, *overwrite, stream, workspace)
+	err = scmLoad(client, projectName, *sandboxPath, *overwrite, *stream, *workspace)
 	if err == nil {
 		fmt.Printf("Load successful\n")
 	} else {
@@ -190,6 +193,8 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		// Find a repository workspace with the correct naming convention
 		// Failing that, create one.
 		if workspace {
+			newMetaData.isstream = false
+
 			// Fetch all of the streams from the project
 			request, err = http.NewRequest("GET", orion_fs, nil)
 			if err != nil {
@@ -219,10 +224,11 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 
 			// FIXME this should create a new repository workspace from the specified stream
 			if workspaceObj.Name == "" {
-				fmt.Printf("No repository workspace found\n")
-				return nil
+				return errors.New("No repository workspace found\n")
 			}
 		} else {
+			newMetaData.isstream = true
+
 			// Fetch all of the streams from the project
 			request, err = http.NewRequest("GET", projecturl, nil)
 			if err != nil {
@@ -262,9 +268,16 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		workspaceObj.Name = status.metaData.workspaceName
 		workspaceObj.RTCSCM.ItemId = status.metaData.workspaceId
 		workspaceObj.parentUrl = status.metaData.projectUrl
+
+		newMetaData.isstream = status.metaData.isstream
 	}
 
 	fmt.Printf("Loading from %v\n", workspaceObj.Name)
+	if newMetaData.isstream {
+		fmt.Printf("Type: Stream\n")
+	} else {
+		fmt.Printf("Type: Repository Workspace\n")
+	}
 
 	newMetaData.workspaceName = workspaceObj.Name
 	newMetaData.workspaceId = workspaceObj.RTCSCM.ItemId

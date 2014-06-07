@@ -24,6 +24,7 @@ type metaData struct {
 	pathMap       map[string]metaObject
 	componentEtag map[string]string
 	workspaceName string
+	isstream      bool
 	workspaceId   string
 	projectUrl    string
 
@@ -48,6 +49,7 @@ func (metadata *metaData) load(path string) error {
 	if err == nil {
 		decoder := gob.NewDecoder(file)
 		err = decoder.Decode(&metadata.workspaceName)
+		err = decoder.Decode(&metadata.isstream)
 		err = decoder.Decode(&metadata.workspaceId)
 		err = decoder.Decode(&metadata.projectUrl)
 		err = decoder.Decode(&metadata.pathMap)
@@ -67,6 +69,7 @@ func (metadata *metaData) save(path string) error {
 	if err == nil {
 		encoder := gob.NewEncoder(file)
 		err = encoder.Encode(&metadata.workspaceName)
+		err = encoder.Encode(&metadata.isstream)
 		err = encoder.Encode(&metadata.workspaceId)
 		err = encoder.Encode(&metadata.projectUrl)
 		err = encoder.Encode(&metadata.pathMap)

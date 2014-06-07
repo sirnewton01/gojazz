@@ -33,6 +33,13 @@ func (status *status) unchanged() bool {
 
 func (status *status) String() string {
 	result := status.metaData.workspaceName + "\n"
+
+	if status.metaData.isstream {
+		result = result + "Type: Stream\n"
+	} else {
+		result = result + "Type: Workspace\n"
+	}
+
 	nochanges := true
 
 	for k, _ := range status.Added {
