@@ -259,10 +259,14 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 	} else {
 		workspaceObj.Directory = true
 		workspaceObj.RTCSCM.Type = "Workspace"
+		workspaceObj.Name = status.metaData.workspaceName
 		workspaceObj.RTCSCM.ItemId = status.metaData.workspaceId
 		workspaceObj.parentUrl = status.metaData.projectUrl
 	}
 
+	fmt.Printf("Loading from %v\n", workspaceObj.Name)
+
+	newMetaData.workspaceName = workspaceObj.Name
 	newMetaData.workspaceId = workspaceObj.RTCSCM.ItemId
 	newMetaData.projectUrl = workspaceObj.parentUrl
 

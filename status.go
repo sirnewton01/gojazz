@@ -32,22 +32,26 @@ func (status *status) unchanged() bool {
 }
 
 func (status *status) String() string {
-	result := ""
+	result := status.metaData.workspaceName + "\n"
+	nochanges := true
 
 	for k, _ := range status.Added {
 		result = result + k + " (Added)\n"
+		nochanges = false
 	}
 
 	for k, _ := range status.Modified {
 		result = result + k + " (Modified)\n"
+		nochanges = false
 	}
 
 	for k, _ := range status.Deleted {
 		result = result + k + " (Deleted)\n"
+		nochanges = false
 	}
 
-	if result == "" {
-		result = "No local changes\n"
+	if nochanges {
+		result = result + "<No local changes>\n"
 	}
 
 	return result

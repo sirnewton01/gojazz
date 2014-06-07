@@ -23,6 +23,7 @@ type metaObject struct {
 type metaData struct {
 	pathMap       map[string]metaObject
 	componentEtag map[string]string
+	workspaceName string
 	workspaceId   string
 	projectUrl    string
 
@@ -46,6 +47,7 @@ func (metadata *metaData) load(path string) error {
 	file, err := os.Open(path)
 	if err == nil {
 		decoder := gob.NewDecoder(file)
+		err = decoder.Decode(&metadata.workspaceName)
 		err = decoder.Decode(&metadata.workspaceId)
 		err = decoder.Decode(&metadata.projectUrl)
 		err = decoder.Decode(&metadata.pathMap)
@@ -64,6 +66,7 @@ func (metadata *metaData) save(path string) error {
 	file, err := os.Create(path)
 	if err == nil {
 		encoder := gob.NewEncoder(file)
+		err = encoder.Encode(&metadata.workspaceName)
 		err = encoder.Encode(&metadata.workspaceId)
 		err = encoder.Encode(&metadata.projectUrl)
 		err = encoder.Encode(&metadata.pathMap)
