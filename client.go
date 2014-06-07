@@ -65,8 +65,10 @@ func NewClient(userID string, password string) (*Client, error) {
 func (jClient *Client) Do(request *http.Request) (*http.Response, error) {
 	jClient.Log.Println("Trying request:", request.URL)
 
-	// Set the user agent to firefox in order to get a guest token
-	request.Header.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64)")
+	if jClient.userID == "" {
+		// Set the user agent to firefox in order to get a guest token
+		request.Header.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64)")
+	}
 
 	resp, err := jClient.httpClient.Do(request)
 

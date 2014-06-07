@@ -49,18 +49,24 @@ type Project struct {
 
 // TODO private projects
 func loadOp() {
-	if len(os.Args) < 3 {
-		fmt.Printf("Provide an IBM DevOps Services project to load.\n")
-		flag.PrintDefaults()
-		return
+	var projectName string
+
+	stream := ""
+	workspace := false
+
+	// Project name provided
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		projectName = os.Args[1]
+		os.Args = os.Args[1:]
+
+		// Providing a workspace or stream is only valid in the context of a project
+		stream = *flag.String("stream", "", "Alternate stream to load")
+		workspace = *flag.Bool("workspace", false, "Use a repository workspace to check-in changes (requires authentication).")
 	}
 
-	projectName := &os.Args[2]
-	os.Args = os.Args[2:]
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
 	overwrite := flag.Bool("force", false, "Force overwrite of any local changes")
-	stream := flag.String("stream", "", "Alternate stream to load")
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -87,11 +93,11 @@ func loadOp() {
 		panic(err)
 	}
 
-	fmt.Printf("Loading '%v' into %v...\n", *projectName, *sandboxPath)
-	if *stream != "" {
-		fmt.Printf("Stream is %v\n", *stream)
+	fmt.Printf("Loading into %v...\n", *sandboxPath)
+	if stream != "" {
+		fmt.Printf("Stream is %v\n", stream)
 	}
-	err = scmLoad(client, *projectName, *sandboxPath, *overwrite, *stream)
+	err = scmLoad(client, projectName, *sandboxPath, *overwrite, stream, workspace)
 	if err == nil {
 		fmt.Printf("Load successful\n")
 	} else {
@@ -99,18 +105,10 @@ func loadOp() {
 	}
 }
 
-func scmLoad(client *Client, project string, sandbox string, overwrite bool, stream string) error {
-	projectEscaped := url.QueryEscape(project)
-
-	// Discover the RTC repo for this project
-	request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectsByFilter?token=&startIndex=0&pageSize=2&filter="+projectEscaped, nil)
-
-	if err != nil {
-		return err
-	}
+func fetchFSObject(client *Client, request *http.Request) *FSObject {
 	resp, err := client.Do(request)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	if resp.StatusCode != 200 {
 		fmt.Printf("Response Status: %v\n", resp.StatusCode)
@@ -118,75 +116,157 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		fmt.Printf("Response Body\n%v\n", string(b))
 		panic("Error")
 	}
-	results := &ProjectResults{}
+	fsObject := &FSObject{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(b, results)
-	if err != nil {
-		return err
-	}
-
-	if len(results.Projects) != 1 {
-		return errors.New("Project not found")
-	}
-
-	orion_fs := results.Projects[0].CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
-	projecturl := orion_fs + "/" + project
-
-	// Fetch all of the streams from the project
-	request, err = http.NewRequest("GET", projecturl, nil)
-	if err != nil {
 		panic(err)
 	}
-	resp, err = client.Do(request)
-	if err != nil {
-		panic(err)
-	}
-	if resp.StatusCode != 200 {
-		fmt.Printf("Response Status: %v\n", resp.StatusCode)
-		b, _ := ioutil.ReadAll(resp.Body)
-		fmt.Printf("Response Body\n%v\n", string(b))
-		panic("Error")
-	}
-	projectObj := &FSObject{}
-	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-	err = json.Unmarshal(b, projectObj)
+	err = json.Unmarshal(b, fsObject)
 	if err != nil {
 		panic(err)
 	}
 
-	var streamObj FSObject
-	for _, childStream := range projectObj.Children {
-		if childStream.Name == stream {
-			streamObj = childStream
-			break
+	return fsObject
+}
+
+func scmLoad(client *Client, project string, sandbox string, overwrite bool, stream string, workspace bool) error {
+	// Get the existing status of the sandbox, if available
+	status, _ := scmStatus(sandbox)
+
+	if status != nil && !status.unchanged() {
+		if !overwrite {
+			return errors.New("There are local changes, aborting. Use the status subcommand to find the changes. Try again with '-force=true' to overwrite")
 		}
 
-		// The default stream for a project has the form "user | projectName Stream"
-		if stream == "" && childStream.Name == project+" Stream" {
-			streamObj = childStream
-		}
+		fmt.Printf("Overwriting these files:\n %v", status)
 	}
 
-	// Still no stream found, fail if user specified a stream, pick the first one otherwise
-	if streamObj.Name == "" {
-		if stream != "" {
-			return errors.New("Stream with name " + stream + " not found")
+	newMetaData := newMetaData()
+	newMetaData.initConcurrentWrite()
+
+	var workspaceObj FSObject
+
+	// This is either a fresh sandbox or project/stream/workspace information was provided
+	if status == nil || project != "" {
+		if project == "" {
+			return errors.New("Provide a project to load")
 		}
 
-		if len(projectObj.Children) == 0 {
-			return errors.New("No default stream could be found for this project. Is it a Git project?")
+		projectEscaped := url.QueryEscape(project)
+
+		// Discover the RTC repo for this project
+		request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectsByFilter?token=&startIndex=0&pageSize=2&filter="+projectEscaped, nil)
+		if err != nil {
+			return err
 		}
-		streamObj = projectObj.Children[0]
+
+		resp, err := client.Do(request)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != 200 {
+			fmt.Printf("Response Status: %v\n", resp.StatusCode)
+			b, _ := ioutil.ReadAll(resp.Body)
+			fmt.Printf("Response Body\n%v\n", string(b))
+			panic("Error")
+		}
+		results := &ProjectResults{}
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(b, results)
+		if err != nil {
+			return err
+		}
+
+		if len(results.Projects) != 1 {
+			return errors.New("Project not found")
+		}
+
+		orion_fs := results.Projects[0].CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
+		projecturl := orion_fs + "/" + project
+
+		// Find a repository workspace with the correct naming convention
+		// Failing that, create one.
+		if workspace {
+			// Fetch all of the streams from the project
+			request, err = http.NewRequest("GET", orion_fs, nil)
+			if err != nil {
+				panic(err)
+			}
+
+			resp, err := client.Do(request)
+
+			b, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+
+			workspaceList := &FSObject{}
+			err = json.Unmarshal(b, workspaceList)
+			if err != nil {
+				return err
+			}
+
+			// FIXME this criteria is not good, there's no way to discover if the workspace flows with the specified stream
+			for _, workspace := range workspaceList.Children {
+				if workspace.Name == "Default "+project+" Workspace" {
+					workspaceObj = workspace
+					break
+				}
+			}
+
+			// FIXME this should create a new repository workspace from the specified stream
+			if workspaceObj.Name == "" {
+				fmt.Printf("No repository workspace found\n")
+				return nil
+			}
+		} else {
+			// Fetch all of the streams from the project
+			request, err = http.NewRequest("GET", projecturl, nil)
+			if err != nil {
+				panic(err)
+			}
+			projectObj := fetchFSObject(client, request)
+
+			for _, childStream := range projectObj.Children {
+				if childStream.Name == stream {
+					workspaceObj = childStream
+					break
+				}
+
+				// The default stream for a project has the form "user | projectName Stream"
+				if stream == "" && childStream.Name == project+" Stream" {
+					workspaceObj = childStream
+				}
+			}
+
+			// Still no stream found, fail if user specified a stream, pick the first one otherwise
+			if workspaceObj.Name == "" {
+				if stream != "" {
+					return errors.New("Stream with name " + stream + " not found")
+				}
+
+				if len(projectObj.Children) == 0 {
+					return errors.New("No default stream could be found for this project. Is it a Git project?")
+				}
+				workspaceObj = projectObj.Children[0]
+			}
+		}
+
+		workspaceObj.parentUrl = projecturl
+	} else {
+		workspaceObj.Directory = true
+		workspaceObj.RTCSCM.Type = "Workspace"
+		workspaceObj.RTCSCM.ItemId = status.metaData.workspaceId
+		workspaceObj.parentUrl = status.metaData.projectUrl
 	}
 
-	streamObj.sandboxPath = sandbox
-	streamObj.parentUrl = projecturl
+	newMetaData.workspaceId = workspaceObj.RTCSCM.ItemId
+	newMetaData.projectUrl = workspaceObj.parentUrl
+
+	workspaceObj.sandboxPath = sandbox
 
 	queue := make(chan FSObject, bufferSize)
 
@@ -202,24 +282,10 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		finished <- true
 	}()
 
-	// Get the existing status of the sandbox, if available
-	status, _ := scmStatus(sandbox)
-
-	if !overwrite && status != nil && !status.unchanged() {
-		return errors.New("There are local changes, aborting. Use the status subcommand to find the changes. Try again with '-force=true' to overwrite")
-	}
-
-	if status != nil && !status.unchanged() {
-		fmt.Printf("Overwriting these files:\n %v", status)
-	}
-
 	// Delete the old metadata
 	os.Remove(filepath.Join(sandbox, metadataFileName))
 
-	newMetaData := newMetaData()
-	newMetaData.initConcurrentWrite()
-
-	loadChild(client, sandbox, streamObj, queue, tracker, status, newMetaData)
+	loadChild(client, sandbox, workspaceObj, queue, tracker, status, newMetaData)
 
 	createFiles := func() {
 		for {
@@ -289,7 +355,6 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 		sandboxPath := fsObject.sandboxPath
 
 		request, err := http.NewRequest("GET", url, nil)
-
 		if err != nil {
 			panic(err)
 		}
@@ -420,9 +485,7 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 		_, err := os.Stat(sandboxPath)
 		if err == nil && status != nil {
 			// User modified the file
-			if status.Modified[sandboxPath] {
-				fmt.Printf("%v was modified and is overwritten\n", sandboxPath)
-			} else if status.metaData != nil {
+			if !status.Modified[sandboxPath] && status.metaData != nil {
 				// The file is unchanged locally and in the repository
 				oldMeta, ok := status.metaData.get(sandboxPath, sandbox)
 

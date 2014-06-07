@@ -54,7 +54,6 @@ func (status *status) String() string {
 }
 
 func statusOp() {
-	os.Args = os.Args[1:]
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	flag.Parse()
 

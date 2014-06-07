@@ -13,8 +13,10 @@ func main() {
 
 	switch os.Args[1] {
 	case "load":
+		os.Args = os.Args[1:]
 		loadOp()
 	case "status":
+		os.Args = os.Args[1:]
 		statusOp()
 	default:
 		fmt.Printf("Invalid subcommand '%v'. Available subcommands: 'load', 'status'\n", os.Args[1])
