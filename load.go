@@ -83,14 +83,31 @@ func loadOp() {
 
 	password := ""
 
-	if *userId != "" {
-		fmt.Printf("Password: ")
-		password = string(gopass.GetPasswd())
-	}
-
 	if *workspace && *userId == "" {
 		fmt.Printf("You must provide credentials to use a repository workspace\n")
 		return
+	}
+
+	// Get the existing status of the sandbox, if available
+	status, _ := scmStatus(*sandboxPath)
+
+	if status != nil && !status.unchanged() {
+		if !*overwrite {
+			fmt.Printf("There are local changes, aborting. Use the status subcommand to find the changes. Try again with '-force=true' to overwrite\n")
+			return
+		}
+
+		fmt.Printf("Overwriting these files:\n %v", status)
+	}
+
+	// Re-use the existing user ID from the metadata, if available
+	if *userId == "" && status != nil && status.metaData.userId != "" {
+		userId = &status.metaData.userId
+	}
+
+	if *userId != "" {
+		fmt.Printf("Password: ")
+		password = string(gopass.GetPasswd())
 	}
 
 	// Assemble a client with the user credentials
@@ -100,7 +117,7 @@ func loadOp() {
 	}
 
 	fmt.Printf("Loading into %v...\n", *sandboxPath)
-	err = scmLoad(client, projectName, *sandboxPath, *overwrite, *stream, *workspace)
+	err = scmLoad(client, projectName, *sandboxPath, status, *stream, *workspace)
 	if err == nil {
 		fmt.Printf("Load successful\n")
 	} else {
@@ -132,18 +149,7 @@ func fetchFSObject(client *Client, request *http.Request) *FSObject {
 	return fsObject
 }
 
-func scmLoad(client *Client, project string, sandbox string, overwrite bool, stream string, workspace bool) error {
-	// Get the existing status of the sandbox, if available
-	status, _ := scmStatus(sandbox)
-
-	if status != nil && !status.unchanged() {
-		if !overwrite {
-			return errors.New("There are local changes, aborting. Use the status subcommand to find the changes. Try again with '-force=true' to overwrite")
-		}
-
-		fmt.Printf("Overwriting these files:\n %v", status)
-	}
-
+func scmLoad(client *Client, project string, sandbox string, status *status, stream string, workspace bool) error {
 	newMetaData := newMetaData()
 	newMetaData.initConcurrentWrite()
 
@@ -262,6 +268,7 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		}
 
 		workspaceObj.parentUrl = projecturl
+		newMetaData.userId = client.userID
 	} else {
 		workspaceObj.Directory = true
 		workspaceObj.RTCSCM.Type = "Workspace"
@@ -270,6 +277,7 @@ func scmLoad(client *Client, project string, sandbox string, overwrite bool, str
 		workspaceObj.parentUrl = status.metaData.projectUrl
 
 		newMetaData.isstream = status.metaData.isstream
+		newMetaData.userId = status.metaData.userId
 	}
 
 	fmt.Printf("Loading from %v\n", workspaceObj.Name)

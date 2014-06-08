@@ -27,6 +27,7 @@ type metaData struct {
 	isstream      bool
 	workspaceId   string
 	projectUrl    string
+	userId        string
 
 	inited    bool
 	storeMeta chan metaObject
@@ -52,6 +53,7 @@ func (metadata *metaData) load(path string) error {
 		err = decoder.Decode(&metadata.isstream)
 		err = decoder.Decode(&metadata.workspaceId)
 		err = decoder.Decode(&metadata.projectUrl)
+		err = decoder.Decode(&metadata.userId)
 		err = decoder.Decode(&metadata.pathMap)
 		err = decoder.Decode(&metadata.componentEtag)
 	}
@@ -72,6 +74,7 @@ func (metadata *metaData) save(path string) error {
 		err = encoder.Encode(&metadata.isstream)
 		err = encoder.Encode(&metadata.workspaceId)
 		err = encoder.Encode(&metadata.projectUrl)
+		err = encoder.Encode(&metadata.userId)
 		err = encoder.Encode(&metadata.pathMap)
 		err = encoder.Encode(&metadata.componentEtag)
 	}

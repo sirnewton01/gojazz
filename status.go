@@ -37,7 +37,7 @@ func (status *status) String() string {
 	if status.metaData.isstream {
 		result = result + "Type: Stream\n"
 	} else {
-		result = result + "Type: Workspace\n"
+		result = result + "Type: Repository Workspace\n"
 	}
 
 	nochanges := true
@@ -83,7 +83,7 @@ func statusOp() {
 	if err == nil {
 		fmt.Printf("%v", status)
 	} else {
-		fmt.Printf("%v", err.Error())
+		fmt.Printf("%v\n", err.Error())
 	}
 }
 
