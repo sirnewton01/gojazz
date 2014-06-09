@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -292,6 +293,10 @@ func checkinOp() {
 		fmt.Printf("Response Body\n%v\n", string(b))
 		panic("Error")
 	}
+
+	fmt.Println("Checkin Complete")
+	fmt.Println("Visit the following URL to deliver your changes to the rest of the team:")
+	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+projectId))
 }
 
 func checkinFile(client *Client, path string, sandboxpath string, postUrl string) metaObject {
