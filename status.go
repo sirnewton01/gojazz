@@ -155,9 +155,10 @@ func scmStatus(sandboxPath string) (*status, error) {
 
 	// Walk the metadata to find any items that don't exist
 	for path, _ := range oldMetaData.pathMap {
-		_, err := os.Stat(filepath.Join(sandboxPath, path))
+		fullpath := filepath.Join(sandboxPath, path)
+		_, err := os.Stat(fullpath)
 		if err != nil {
-			status.Deleted[path] = true
+			status.Deleted[fullpath] = true
 		}
 	}
 

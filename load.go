@@ -34,9 +34,10 @@ type FSObject struct {
 }
 
 type SCMObject struct {
-	ItemId  string
-	StateId string
-	Type    string
+	ComponentId string
+	ItemId      string
+	StateId     string
+	Type        string
 }
 
 type ProjectResults struct {
@@ -222,7 +223,7 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 
 			// FIXME this criteria is not good, there's no way to discover if the workspace flows with the specified stream
 			for _, workspace := range workspaceList.Children {
-				if workspace.Name == "Default "+project+" Workspace" {
+				if workspace.Name == project+" Workspace" {
 					workspaceObj = workspace
 					break
 				}
@@ -366,6 +367,7 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 	url := fsObject.parentUrl
 
 	meta := metaObject{}
+	meta.ComponentId = fsObject.RTCSCM.ComponentId
 	meta.ItemId = fsObject.RTCSCM.ItemId
 	meta.StateId = fsObject.RTCSCM.StateId
 

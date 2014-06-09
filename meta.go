@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -18,6 +19,7 @@ type metaObject struct {
 	LasModified int64
 	Size        int64
 	Hash        string
+	ComponentId string
 }
 
 type metaData struct {
@@ -137,4 +139,9 @@ func (metadata *metaData) get(path string, sandboxpath string) (metaObject, bool
 	}
 
 	return meta, hit
+}
+
+func (metadata *metaData) projectId() string {
+	projectUrlParts := strings.Split(metadata.projectUrl, "/")
+	return projectUrlParts[len(projectUrlParts)-1]
 }
