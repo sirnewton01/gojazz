@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -65,21 +64,7 @@ func checkinOp() {
 		panic(err)
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-
-	workspaceObj := &FSObject{}
-	err = json.Unmarshal(b, workspaceObj)
-	if err != nil {
-		panic(err)
-	}
+	workspaceObj := fetchFSObject(client, req)
 
 	// TODO Probe the remote workspace to verify that it is in sync
 	//   - Tell the user if they are out of sync
@@ -99,8 +84,6 @@ func checkinOp() {
 	if defaultComponentId == "" {
 		defaultComponentId = workspaceObj.Children[0].RTCSCM.ItemId
 	}
-
-	status.metaData.initConcurrentWrite()
 
 	for modifiedpath, _ := range status.Modified {
 		fmt.Printf("%v (Modified)\n", modifiedpath)
@@ -123,7 +106,7 @@ func checkinOp() {
 
 		newmeta := checkinFile(client, modifiedpath, *sandboxPath, postUrl)
 
-		status.metaData.put(newmeta, *sandboxPath)
+		status.metaData.simplePut(newmeta, *sandboxPath)
 	}
 
 	addedFiles := make([]string, len(status.Added))
@@ -167,28 +150,7 @@ func checkinOp() {
 				panic(err)
 			}
 
-			resp, err := client.Do(request)
-			if err != nil {
-				panic(err)
-			}
-
-			if resp.StatusCode != 200 {
-				fmt.Printf("Response Status: %v\n", resp.StatusCode)
-				b, _ := ioutil.ReadAll(resp.Body)
-				fmt.Printf("Response Body\n%v\n", string(b))
-				panic("Error")
-			}
-
-			b, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				panic(err)
-			}
-
-			fsObject := &FSObject{}
-			err = json.Unmarshal(b, fsObject)
-			if err != nil {
-				panic(err)
-			}
+			fsObject := fetchFSObject(client, request)
 
 			meta := metaObject{}
 			meta.Path = addedpath
@@ -196,7 +158,7 @@ func checkinOp() {
 			meta.StateId = fsObject.RTCSCM.StateId
 			meta.ComponentId = fsObject.RTCSCM.ComponentId
 
-			status.metaData.put(meta, *sandboxPath)
+			status.metaData.simplePut(meta, *sandboxPath)
 		} else {
 			// Pre-create the empty file and then check it in
 			postUrl := workspaceUrl + "/" + componentId + "/" + remoteParent + "?op=createFile&name=" + name
@@ -205,26 +167,25 @@ func checkinOp() {
 				panic(err)
 			}
 
-			resp, err := client.Do(createRequest)
+			_, err = client.Do(createRequest)
 			if err != nil {
 				panic(err)
 			}
-			if resp.StatusCode != 200 {
-				fmt.Printf("Response Status: %v\n", resp.StatusCode)
-				b, _ := ioutil.ReadAll(resp.Body)
-				fmt.Printf("Response Body\n%v\n", string(b))
-				panic("Error")
-			}
+			// FIXME uncomment this once the bug has been fixed in the orion filesystem service
+			// Unfortunately, the create file of a component root throws a 500 even though the
+			//  request was successful
+//			if resp.StatusCode != 200 {
+//				fmt.Printf("Response Status: %v\n", resp.StatusCode)
+//				b, _ := ioutil.ReadAll(resp.Body)
+//				fmt.Printf("Response Body\n%v\n", string(b))
+//				panic("Error")
+//			}
 
 			postUrl = workspaceUrl + "/" + componentId + "/" + remotePath + "?op=writeContent"
 			newmeta := checkinFile(client, addedpath, *sandboxPath, postUrl)
-			status.metaData.put(newmeta, *sandboxPath)
+			status.metaData.simplePut(newmeta, *sandboxPath)
 		}
 	}
-
-	// TODO allow metadata to handle simple non-concurrent put's
-	// force the metadata to sync up
-	status.metaData.sync <- 1
 
 	deletedFiles := make([]string, len(status.Deleted))
 	idx = 0
@@ -306,33 +267,16 @@ func checkinFile(client *Client, path string, sandboxpath string, postUrl string
 	}
 	defer file.Close()
 
-	req, err := http.NewRequest("POST", postUrl, file)
+	// Setup the SHA-1 hash of the file contents
+	hash := sha1.New()
+	tee := io.TeeReader(file, hash)
+
+	req, err := http.NewRequest("POST", postUrl, tee)
 	if err != nil {
 		panic(err)
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Printf("Response Status: %v\n", resp.StatusCode)
-		b, _ := ioutil.ReadAll(resp.Body)
-		fmt.Printf("Response Body\n%v\n", string(b))
-		panic("Error")
-	}
-
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-
-	fsObject := &FSObject{}
-	err = json.Unmarshal(b, fsObject)
-	if err != nil {
-		panic(err)
-	}
+	fsObject := fetchFSObject(client, req)
 
 	newmeta := metaObject{}
 	newmeta.Path = path
@@ -341,28 +285,12 @@ func checkinFile(client *Client, path string, sandboxpath string, postUrl string
 	newmeta.ComponentId = fsObject.RTCSCM.ComponentId
 
 	info, err := os.Stat(path)
-
 	if err != nil {
 		panic(err)
 	}
 
 	newmeta.LasModified = info.ModTime().Unix()
 	newmeta.Size = info.Size()
-
-	// TODO avoid opening the file twice
-	file, err = os.Open(path)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	// Setup the SHA-1 hash of the file contents
-	hash := sha1.New()
-	_, err = io.Copy(hash, file)
-
-	if err != nil {
-		panic(err)
-	}
 
 	newmeta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
 

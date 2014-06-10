@@ -126,30 +126,6 @@ func loadOp() {
 	}
 }
 
-func fetchFSObject(client *Client, request *http.Request) *FSObject {
-	resp, err := client.Do(request)
-	if err != nil {
-		panic(err)
-	}
-	if resp.StatusCode != 200 {
-		fmt.Printf("Response Status: %v\n", resp.StatusCode)
-		b, _ := ioutil.ReadAll(resp.Body)
-		fmt.Printf("Response Body\n%v\n", string(b))
-		panic("Error")
-	}
-	fsObject := &FSObject{}
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-	err = json.Unmarshal(b, fsObject)
-	if err != nil {
-		panic(err)
-	}
-
-	return fsObject
-}
-
 func scmLoad(client *Client, project string, sandbox string, status *status, stream string, workspace bool) error {
 	newMetaData := newMetaData()
 	newMetaData.initConcurrentWrite()
@@ -208,18 +184,7 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 				panic(err)
 			}
 
-			resp, err := client.Do(request)
-
-			b, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-
-			workspaceList := &FSObject{}
-			err = json.Unmarshal(b, workspaceList)
-			if err != nil {
-				return err
-			}
+			workspaceList := fetchFSObject(client, request)
 
 			// FIXME this criteria is not good, there's no way to discover if the workspace flows with the specified stream
 			for _, workspace := range workspaceList.Children {

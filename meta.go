@@ -106,7 +106,7 @@ func (metadata *metaData) initConcurrentWrite() {
 
 func (metadata *metaData) put(obj metaObject, sandboxpath string) {
 	if !metadata.inited {
-		panic("Metadata is not initialized for concurrent write, call InitConcurentWrite() first.")
+		panic("Metadata is not initialized for concurrent write, call initConcurentWrite first")
 	}
 
 	// Reduce the path of the metadata object using the sandbox path
@@ -120,6 +120,20 @@ func (metadata *metaData) put(obj metaObject, sandboxpath string) {
 	obj.Path = relpath
 
 	metadata.storeMeta <- obj
+}
+
+func (metadata *metaData) simplePut(obj metaObject, sandboxpath string) {
+	// Reduce the path of the metadata object using the sandbox path
+	//  this will dramatically decrease the size of the metadata
+	relpath, err := filepath.Rel(sandboxpath, obj.Path)
+
+	if err != nil {
+		panic(err)
+	}
+
+	obj.Path = relpath
+
+	metadata.pathMap[relpath] = obj
 }
 
 func (metadata *metaData) get(path string, sandboxpath string) (metaObject, bool) {
