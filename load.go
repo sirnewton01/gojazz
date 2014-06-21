@@ -141,7 +141,7 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 		projectEscaped := url.QueryEscape(project)
 
 		// Discover the RTC repo for this project
-		request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectsByFilter?token=&startIndex=0&pageSize=2&filter="+projectEscaped, nil)
+		request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectByName?projectName="+projectEscaped+"&refresh=true&includeMembers=false&includeHidden=true", nil)
 		if err != nil {
 			return err
 		}
@@ -156,21 +156,21 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 			fmt.Printf("Response Body\n%v\n", string(b))
 			panic("Error")
 		}
-		results := &ProjectResults{}
+		result := &Project{}
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
-		err = json.Unmarshal(b, results)
+		err = json.Unmarshal(b, result)
 		if err != nil {
 			return err
 		}
 
-		if len(results.Projects) != 1 {
+		if result.CcmBaseUrl == "" {
 			return errors.New("Project not found")
 		}
 
-		orion_fs := results.Projects[0].CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
+		orion_fs := result.CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
 		projecturl := orion_fs + "/" + project
 
 		// Find a repository workspace with the correct naming convention
