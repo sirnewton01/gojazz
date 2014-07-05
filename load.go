@@ -48,7 +48,6 @@ type Project struct {
 	CcmBaseUrl string `json:"ccmBaseUrl"`
 }
 
-// TODO private projects
 func loadOp() {
 	var projectName string
 
@@ -69,7 +68,6 @@ func loadOp() {
 
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
-	overwrite := flag.Bool("force", false, "Force overwrite of any local changes")
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -90,15 +88,12 @@ func loadOp() {
 	}
 
 	// Get the existing status of the sandbox, if available
-	status, _ := scmStatus(*sandboxPath)
+	// Back up any changes that are found
+	status, _ := scmStatus(*sandboxPath, BACKUP)
 
 	if status != nil && !status.unchanged() {
-		if !*overwrite {
-			fmt.Printf("There are local changes, aborting. Use the status subcommand to find the changes. Try again with '-force=true' to overwrite\n")
-			return
-		}
-
-		fmt.Printf("Overwriting these files:\n %v", status)
+		fmt.Printf("Here was the status of your sandbox before loading:\n%v", status)
+		fmt.Printf("Your changes have been backed up: %v\n", status.copyPath)
 	}
 
 	// Re-use the existing user ID from the metadata, if available
@@ -305,6 +300,10 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 	}
 	for _, root := range roots {
 		if _, ok := newMetaData.get(filepath.Join(sandbox, root), sandbox); !ok {
+			// Skip the staging forlder or the metadata file
+			if strings.Contains(root, stageFolder) || strings.Contains(root, metadataFileName) || strings.Contains(root, backupFolder) {
+				continue
+			}
 			err = os.RemoveAll(root)
 			if err != nil {
 				panic(err)
@@ -327,8 +326,6 @@ func extractComponentEtag(rawEtag string) string {
 }
 
 func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSObject, tracker chan int, status *status, newMetaData *metaData) {
-	client.Log.Printf("Loading %v\n", fsObject.Name)
-
 	url := fsObject.parentUrl
 
 	meta := metaObject{}
@@ -476,8 +473,13 @@ func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSO
 
 		_, err := os.Stat(sandboxPath)
 		if err == nil && status != nil {
-			// User modified the file
-			if !status.Modified[sandboxPath] && status.metaData != nil {
+			rel, err := filepath.Rel(sandbox, sandboxPath)
+			if err != nil {
+				panic(err)
+			}
+
+			// File exists, check if the user modified it
+			if !status.Modified[rel] && status.metaData != nil {
 				// The file is unchanged locally and in the repository
 				oldMeta, ok := status.metaData.get(sandboxPath, sandbox)
 

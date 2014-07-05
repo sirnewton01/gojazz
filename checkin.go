@@ -31,7 +31,7 @@ func checkinOp() {
 		sandboxPath = &path
 	}
 
-	status, err := scmStatus(*sandboxPath)
+	status, err := scmStatus(*sandboxPath, STAGE)
 	if err != nil {
 		fmt.Printf("%v\n", err.Error())
 		return
@@ -87,6 +87,7 @@ func checkinOp() {
 
 	for modifiedpath, _ := range status.Modified {
 		fmt.Printf("%v (Modified)\n", modifiedpath)
+		modifiedpath = filepath.Join(*sandboxPath, modifiedpath)
 
 		// TODO handle the case where a file gets replaced with a directory with the same name
 		meta, ok := status.metaData.get(modifiedpath, *sandboxPath)
@@ -121,6 +122,8 @@ func checkinOp() {
 
 	for _, addedpath := range addedFiles {
 		fmt.Printf("%v (Added)\n", addedpath)
+		addedpath = filepath.Join(*sandboxPath, addedpath)
+
 		info, err := os.Stat(addedpath)
 		if err != nil {
 			panic(err)
@@ -132,6 +135,11 @@ func checkinOp() {
 		}
 
 		remoteParent := filepath.Dir(remotePath)
+
+		if remoteParent == "." {
+			remoteParent = ""
+		}
+
 		name := filepath.Base(remotePath)
 
 		parentMeta, ok := status.metaData.get(filepath.Dir(addedpath), *sandboxPath)
@@ -167,19 +175,17 @@ func checkinOp() {
 				panic(err)
 			}
 
-			_, err = client.Do(createRequest)
+			resp, err := client.Do(createRequest)
 			if err != nil {
 				panic(err)
 			}
-			// FIXME uncomment this once the bug has been fixed in the orion filesystem service
-			// Unfortunately, the create file of a component root throws a 500 even though the
-			//  request was successful
-//			if resp.StatusCode != 200 {
-//				fmt.Printf("Response Status: %v\n", resp.StatusCode)
-//				b, _ := ioutil.ReadAll(resp.Body)
-//				fmt.Printf("Response Body\n%v\n", string(b))
-//				panic("Error")
-//			}
+
+			if resp.StatusCode != 200 {
+				fmt.Printf("Response Status: %v\n", resp.StatusCode)
+				b, _ := ioutil.ReadAll(resp.Body)
+				fmt.Printf("Response Body\n%v\n", string(b))
+				panic("Error")
+			}
 
 			postUrl = workspaceUrl + "/" + componentId + "/" + remotePath + "?op=writeContent"
 			newmeta := checkinFile(client, addedpath, *sandboxPath, postUrl)
@@ -198,8 +204,8 @@ func checkinOp() {
 
 	for idx = len(deletedFiles) - 1; idx >= 0; idx-- {
 		deletedpath := deletedFiles[idx]
-
 		fmt.Printf("%v (Deleted)\n", deletedpath)
+		deletedpath = filepath.Join(*sandboxPath, deletedpath)
 
 		meta, ok := status.metaData.get(deletedpath, *sandboxPath)
 		if !ok {

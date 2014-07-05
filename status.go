@@ -9,20 +9,44 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+)
+
+type mode int
+
+const (
+	stageFolder  = ".jazzstage"
+	backupFolder = ".jazzbackup"
+
+	STAGE mode = iota
+	BACKUP
+	NO_COPY
 )
 
 type status struct {
 	Added    map[string]bool
 	Modified map[string]bool
 	Deleted  map[string]bool
+
 	metaData *metaData
+
+	sandboxPath string
+	copyPath    string
 }
 
-func newStatus() *status {
+func newStatus(sandboxPath string, m mode) *status {
 	status := &status{}
 	status.Added = make(map[string]bool)
 	status.Modified = make(map[string]bool)
 	status.Deleted = make(map[string]bool)
+
+	status.sandboxPath = sandboxPath
+
+	if m == STAGE {
+		status.copyPath = filepath.Join(status.sandboxPath, stageFolder)
+	} else if m == BACKUP {
+		status.copyPath = filepath.Join(status.sandboxPath, backupFolder)
+	}
 
 	return status
 }
@@ -79,7 +103,7 @@ func statusOp() {
 	}
 
 	fmt.Printf("Status of %v...\n", *sandboxPath)
-	status, err := scmStatus(*sandboxPath)
+	status, err := scmStatus(*sandboxPath, NO_COPY)
 	if err == nil {
 		fmt.Printf("%v", status)
 	} else {
@@ -87,7 +111,7 @@ func statusOp() {
 	}
 }
 
-func scmStatus(sandboxPath string) (*status, error) {
+func scmStatus(sandboxPath string, m mode) (*status, error) {
 	// Load up existing metadata and prepare fresh metadata
 	oldMetaData := newMetaData()
 	// If the load fails, it's not a problem, just empty
@@ -97,17 +121,25 @@ func scmStatus(sandboxPath string) (*status, error) {
 		return nil, errors.New("Not a sandbox")
 	}
 
-	status := newStatus()
+	status := newStatus(sandboxPath, m)
 	status.metaData = oldMetaData
 
-	// Walk the current directory structure looking for Added and Modified items
+	// Delete any existing staging area
+	if m == STAGE {
+		err = os.RemoveAll(status.copyPath)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Walk the current directory structure looking for changed items
 	err = filepath.Walk(sandboxPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		// Skip the metadata
-		if path == sandboxPath || filepath.Base(path) == metadataFileName {
+		if path == sandboxPath || filepath.Base(path) == metadataFileName || strings.Contains(path, stageFolder) || strings.Contains(path, backupFolder) {
 			return nil
 		}
 
@@ -115,7 +147,7 @@ func scmStatus(sandboxPath string) (*status, error) {
 
 		// Metadata doesn't exist for this file, so it must be added
 		if !ok {
-			status.Added[path] = true
+			status.fileAdded(path, sandboxPath)
 			return nil
 		}
 
@@ -124,7 +156,7 @@ func scmStatus(sandboxPath string) (*status, error) {
 			if meta.LasModified != info.ModTime().Unix() {
 				// Different sizes mean that the file has changed for sure
 				if meta.Size != info.Size() {
-					status.Modified[path] = true
+					status.fileModified(meta, path, sandboxPath)
 				} else {
 					// Check the hashes
 					file, err := os.Open(path)
@@ -140,7 +172,7 @@ func scmStatus(sandboxPath string) (*status, error) {
 					}
 
 					if meta.Hash != base64.StdEncoding.EncodeToString(hash.Sum(nil)) {
-						status.Modified[path] = true
+						status.fileModified(meta, path, sandboxPath)
 					}
 				}
 			}
@@ -154,13 +186,117 @@ func scmStatus(sandboxPath string) (*status, error) {
 	}
 
 	// Walk the metadata to find any items that don't exist
-	for path, _ := range oldMetaData.pathMap {
+	for path, meta := range oldMetaData.pathMap {
 		fullpath := filepath.Join(sandboxPath, path)
 		_, err := os.Stat(fullpath)
 		if err != nil {
-			status.Deleted[fullpath] = true
+			status.fileDeleted(meta, fullpath, sandboxPath)
 		}
 	}
 
 	return status, nil
+}
+
+func (status *status) calcCopyPath(path string) string {
+	if status.copyPath == "" {
+		return ""
+	}
+
+	relpath, err := filepath.Rel(status.sandboxPath, path)
+
+	if err != nil {
+		panic("Error calculating staging path")
+	}
+
+	return filepath.Join(status.copyPath, relpath)
+}
+
+func (status *status) fileAdded(path string, sandboxPath string) {
+	rel, err := filepath.Rel(sandboxPath, path)
+	if err != nil {
+		panic(err)
+	}
+
+	status.Added[rel] = true
+	copyPath := status.calcCopyPath(path)
+
+	if copyPath != "" {
+		s, err := os.Stat(path)
+
+		if err != nil {
+			panic(err)
+		}
+
+		if s.IsDir() {
+			os.MkdirAll(copyPath, 0700)
+		} else {
+			os.MkdirAll(filepath.Dir(copyPath), 0700)
+
+			stagedFile, err := os.Create(copyPath)
+			if err != nil {
+				panic(err)
+			}
+			defer stagedFile.Close()
+			origFile, err := os.Open(path)
+			if err != nil {
+				panic(err)
+			}
+			defer origFile.Close()
+
+			_, err = io.Copy(stagedFile, origFile)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+}
+
+func (status *status) fileModified(meta metaObject, path string, sandboxPath string) {
+	rel, err := filepath.Rel(sandboxPath, path)
+	if err != nil {
+		panic(err)
+	}
+
+	status.Modified[rel] = true
+	copyPath := status.calcCopyPath(path)
+	fmt.Println(status.copyPath)
+
+	if copyPath != "" {
+		s, err := os.Stat(path)
+
+		if err != nil {
+			panic(err)
+		}
+
+		if s.IsDir() {
+			os.MkdirAll(copyPath, 0700)
+		} else {
+			os.MkdirAll(filepath.Dir(copyPath), 0700)
+
+			stagedFile, err := os.Create(copyPath)
+			if err != nil {
+				panic(err)
+			}
+			defer stagedFile.Close()
+			origFile, err := os.Open(path)
+			if err != nil {
+				panic(err)
+			}
+			defer origFile.Close()
+
+			_, err = io.Copy(stagedFile, origFile)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+}
+
+func (status *status) fileDeleted(meta metaObject, path string, sandboxPath string) {
+	rel, err := filepath.Rel(sandboxPath, path)
+	if err != nil {
+		panic(err)
+	}
+
+	status.Deleted[rel] = true
 }
