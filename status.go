@@ -259,7 +259,6 @@ func (status *status) fileModified(meta metaObject, path string, sandboxPath str
 
 	status.Modified[rel] = true
 	copyPath := status.calcCopyPath(path)
-	fmt.Println(status.copyPath)
 
 	if copyPath != "" {
 		s, err := os.Stat(path)

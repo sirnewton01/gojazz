@@ -113,37 +113,28 @@ func loadOp() {
 	}
 
 	fmt.Printf("Loading into %v...\n", *sandboxPath)
-	err = scmLoad(client, projectName, *sandboxPath, status, *stream, *workspace)
-	if err == nil {
-		fmt.Printf("Load successful\n")
-	} else {
-		fmt.Printf("%v\n", err.Error())
-	}
-}
-
-func scmLoad(client *Client, project string, sandbox string, status *status, stream string, workspace bool) error {
-	newMetaData := newMetaData()
-	newMetaData.initConcurrentWrite()
 
 	var workspaceObj FSObject
+	var isstream bool
 
 	// This is either a fresh sandbox or project/stream/workspace information was provided
-	if status == nil || project != "" {
-		if project == "" {
-			return errors.New("Provide a project to load")
+	if status == nil || projectName != "" {
+		if projectName == "" {
+			panic(errors.New("Provide a project to load"))
 		}
 
-		projectEscaped := url.QueryEscape(project)
+		projectEscaped := url.QueryEscape(projectName)
 
 		// Discover the RTC repo for this project
 		request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectByName?projectName="+projectEscaped+"&refresh=true&includeMembers=false&includeHidden=true", nil)
 		if err != nil {
-			return err
+			fmt.Printf("Error: %v\n", err.Error())
+			return
 		}
 
 		resp, err := client.Do(request)
 		if err != nil {
-			return err
+			panic(err)
 		}
 		if resp.StatusCode != 200 {
 			fmt.Printf("Response Status: %v\n", resp.StatusCode)
@@ -154,24 +145,24 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 		result := &Project{}
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			panic(err)
 		}
 		err = json.Unmarshal(b, result)
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		if result.CcmBaseUrl == "" {
-			return errors.New("Project not found")
+			panic(errors.New("Project not found"))
 		}
 
 		orion_fs := result.CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
-		projecturl := orion_fs + "/" + project
+		projecturl := orion_fs + "/" + projectName
 
 		// Find a repository workspace with the correct naming convention
 		// Failing that, create one.
-		if workspace {
-			newMetaData.isstream = false
+		if *workspace {
+			isstream = false
 
 			// Fetch all of the streams from the project
 			request, err = http.NewRequest("GET", orion_fs, nil)
@@ -182,19 +173,19 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 			workspaceList := fetchFSObject(client, request)
 
 			// FIXME this criteria is not good, there's no way to discover if the workspace flows with the specified stream
-			for _, workspace := range workspaceList.Children {
-				if workspace.Name == project+" Workspace" {
-					workspaceObj = workspace
+			for _, w := range workspaceList.Children {
+				if w.Name == projectName+" Workspace" {
+					workspaceObj = w
 					break
 				}
 			}
 
 			// FIXME this should create a new repository workspace from the specified stream
 			if workspaceObj.Name == "" {
-				return errors.New("No repository workspace found\n")
+				panic(errors.New("No repository workspace found\n"))
 			}
 		} else {
-			newMetaData.isstream = true
+			isstream = true
 
 			// Fetch all of the streams from the project
 			request, err = http.NewRequest("GET", projecturl, nil)
@@ -204,49 +195,64 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 			projectObj := fetchFSObject(client, request)
 
 			for _, childStream := range projectObj.Children {
-				if childStream.Name == stream {
+				if childStream.Name == *stream {
 					workspaceObj = childStream
 					break
 				}
 
 				// The default stream for a project has the form "user | projectName Stream"
-				if stream == "" && childStream.Name == project+" Stream" {
+				if *stream == "" && childStream.Name == projectName+" Stream" {
 					workspaceObj = childStream
 				}
 			}
 
 			// Still no stream found, fail if user specified a stream, pick the first one otherwise
 			if workspaceObj.Name == "" {
-				if stream != "" {
-					return errors.New("Stream with name " + stream + " not found")
+				if *stream != "" {
+					panic(errors.New("Stream with name " + *stream + " not found"))
 				}
 
 				if len(projectObj.Children) == 0 {
-					return errors.New("No default stream could be found for this project. Is it a Git project?")
+					panic(errors.New("No default stream could be found for this project. Is it a Git project?"))
 				}
 				workspaceObj = projectObj.Children[0]
 			}
 		}
 
 		workspaceObj.parentUrl = projecturl
-		newMetaData.userId = client.userID
 	} else {
-		workspaceObj.Directory = true
-		workspaceObj.RTCSCM.Type = "Workspace"
-		workspaceObj.Name = status.metaData.workspaceName
-		workspaceObj.RTCSCM.ItemId = status.metaData.workspaceId
-		workspaceObj.parentUrl = status.metaData.projectUrl
-
-		newMetaData.isstream = status.metaData.isstream
-		newMetaData.userId = status.metaData.userId
+		workspaceObj = extractWsObj(status)
 	}
 
 	fmt.Printf("Loading from %v\n", workspaceObj.Name)
-	if newMetaData.isstream {
+	if isstream {
 		fmt.Printf("Type: Stream\n")
 	} else {
 		fmt.Printf("Type: Repository Workspace\n")
 	}
+
+	scmLoad(client, workspaceObj, *workspace, *userId, *sandboxPath, status)
+
+	fmt.Printf("Load Successful\n")
+}
+
+func extractWsObj(status *status) FSObject {
+	var workspaceObj FSObject
+
+	workspaceObj.Directory = true
+	workspaceObj.RTCSCM.Type = "Workspace"
+	workspaceObj.Name = status.metaData.workspaceName
+	workspaceObj.RTCSCM.ItemId = status.metaData.workspaceId
+	workspaceObj.parentUrl = status.metaData.projectUrl
+
+	return workspaceObj
+}
+
+func scmLoad(client *Client, workspaceObj FSObject, stream bool, userId string, sandbox string, status *status) {
+	newMetaData := newMetaData()
+	newMetaData.initConcurrentWrite()
+	newMetaData.isstream = stream
+	newMetaData.userId = userId
 
 	newMetaData.workspaceName = workspaceObj.Name
 	newMetaData.workspaceId = workspaceObj.RTCSCM.ItemId
@@ -312,8 +318,6 @@ func scmLoad(client *Client, project string, sandbox string, status *status, str
 	}
 
 	newMetaData.save(filepath.Join(sandbox, metadataFileName))
-
-	return nil
 }
 
 func extractComponentEtag(rawEtag string) string {

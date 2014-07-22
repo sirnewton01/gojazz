@@ -55,6 +55,10 @@ func checkinOp() {
 		panic(err)
 	}
 
+	scmCheckin(client, status, *sandboxPath)
+}
+
+func scmCheckin(client *Client, status *status, sandboxPath string) {
 	workspaceUrl := status.metaData.projectUrl + "/" + status.metaData.workspaceId
 
 	// Get the workspace in order to force the authentication to happen
@@ -87,10 +91,10 @@ func checkinOp() {
 
 	for modifiedpath, _ := range status.Modified {
 		fmt.Printf("%v (Modified)\n", modifiedpath)
-		modifiedpath = filepath.Join(*sandboxPath, modifiedpath)
+		modifiedpath = filepath.Join(sandboxPath, modifiedpath)
 
 		// TODO handle the case where a file gets replaced with a directory with the same name
-		meta, ok := status.metaData.get(modifiedpath, *sandboxPath)
+		meta, ok := status.metaData.get(modifiedpath, sandboxPath)
 		componentId := ""
 		if !ok {
 			panic("Metadata not found for file")
@@ -98,16 +102,16 @@ func checkinOp() {
 			componentId = meta.ComponentId
 		}
 
-		relPath, err := filepath.Rel(*sandboxPath, modifiedpath)
+		relPath, err := filepath.Rel(sandboxPath, modifiedpath)
 		if err != nil {
 			panic(err)
 		}
 
 		postUrl := workspaceUrl + "/" + componentId + "/" + relPath + "?op=writeContent"
 
-		newmeta := checkinFile(client, modifiedpath, *sandboxPath, postUrl)
+		newmeta := checkinFile(client, modifiedpath, sandboxPath, postUrl)
 
-		status.metaData.simplePut(newmeta, *sandboxPath)
+		status.metaData.simplePut(newmeta, sandboxPath)
 	}
 
 	addedFiles := make([]string, len(status.Added))
@@ -122,14 +126,14 @@ func checkinOp() {
 
 	for _, addedpath := range addedFiles {
 		fmt.Printf("%v (Added)\n", addedpath)
-		addedpath = filepath.Join(*sandboxPath, addedpath)
+		addedpath = filepath.Join(sandboxPath, addedpath)
 
 		info, err := os.Stat(addedpath)
 		if err != nil {
 			panic(err)
 		}
 
-		remotePath, err := filepath.Rel(*sandboxPath, addedpath)
+		remotePath, err := filepath.Rel(sandboxPath, addedpath)
 		if err != nil {
 			panic(err)
 		}
@@ -142,7 +146,7 @@ func checkinOp() {
 
 		name := filepath.Base(remotePath)
 
-		parentMeta, ok := status.metaData.get(filepath.Dir(addedpath), *sandboxPath)
+		parentMeta, ok := status.metaData.get(filepath.Dir(addedpath), sandboxPath)
 		componentId := ""
 		if ok {
 			componentId = parentMeta.ComponentId
@@ -166,7 +170,7 @@ func checkinOp() {
 			meta.StateId = fsObject.RTCSCM.StateId
 			meta.ComponentId = fsObject.RTCSCM.ComponentId
 
-			status.metaData.simplePut(meta, *sandboxPath)
+			status.metaData.simplePut(meta, sandboxPath)
 		} else {
 			// Pre-create the empty file and then check it in
 			postUrl := workspaceUrl + "/" + componentId + "/" + remoteParent + "?op=createFile&name=" + name
@@ -188,8 +192,8 @@ func checkinOp() {
 			}
 
 			postUrl = workspaceUrl + "/" + componentId + "/" + remotePath + "?op=writeContent"
-			newmeta := checkinFile(client, addedpath, *sandboxPath, postUrl)
-			status.metaData.simplePut(newmeta, *sandboxPath)
+			newmeta := checkinFile(client, addedpath, sandboxPath, postUrl)
+			status.metaData.simplePut(newmeta, sandboxPath)
 		}
 	}
 
@@ -205,14 +209,14 @@ func checkinOp() {
 	for idx = len(deletedFiles) - 1; idx >= 0; idx-- {
 		deletedpath := deletedFiles[idx]
 		fmt.Printf("%v (Deleted)\n", deletedpath)
-		deletedpath = filepath.Join(*sandboxPath, deletedpath)
+		deletedpath = filepath.Join(sandboxPath, deletedpath)
 
-		meta, ok := status.metaData.get(deletedpath, *sandboxPath)
+		meta, ok := status.metaData.get(deletedpath, sandboxPath)
 		if !ok {
 			panic("Metadata not found for deleted item")
 		}
 
-		remotePath, err := filepath.Rel(*sandboxPath, deletedpath)
+		remotePath, err := filepath.Rel(sandboxPath, deletedpath)
 		if err != nil {
 			panic(err)
 		}
@@ -232,7 +236,7 @@ func checkinOp() {
 		delete(status.metaData.pathMap, remotePath)
 	}
 
-	err = status.metaData.save(filepath.Join(*sandboxPath, metadataFileName))
+	err = status.metaData.save(filepath.Join(sandboxPath, metadataFileName))
 	if err != nil {
 		panic(err)
 	}
@@ -254,7 +258,7 @@ func checkinOp() {
 		panic(err)
 	}
 
-	if response.StatusCode != 202 {
+	if response.StatusCode > 300 {
 		fmt.Printf("Response Status: %v\n", response.StatusCode)
 		b, _ := ioutil.ReadAll(response.Body)
 		fmt.Printf("Response Body\n%v\n", string(b))
@@ -266,8 +270,8 @@ func checkinOp() {
 	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+projectId))
 }
 
-func checkinFile(client *Client, path string, sandboxpath string, postUrl string) metaObject {
-	file, err := os.Open(path)
+func checkinFile(client *Client, localPath string, sandboxPath string, postUrl string) metaObject {
+	file, err := os.Open(localPath)
 	if err != nil {
 		panic(err)
 	}
@@ -285,12 +289,12 @@ func checkinFile(client *Client, path string, sandboxpath string, postUrl string
 	fsObject := fetchFSObject(client, req)
 
 	newmeta := metaObject{}
-	newmeta.Path = path
+	newmeta.Path = sandboxPath
 	newmeta.ItemId = fsObject.RTCSCM.ItemId
 	newmeta.StateId = fsObject.RTCSCM.StateId
 	newmeta.ComponentId = fsObject.RTCSCM.ComponentId
 
-	info, err := os.Stat(path)
+	info, err := os.Stat(localPath)
 	if err != nil {
 		panic(err)
 	}
@@ -299,6 +303,12 @@ func checkinFile(client *Client, path string, sandboxpath string, postUrl string
 	newmeta.Size = info.Size()
 
 	newmeta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
+
+	file.Close()
+	err = os.Remove(localPath)
+	if err != nil {
+		panic(err)
+	}
 
 	return newmeta
 }
