@@ -221,6 +221,7 @@ func loadOp() {
 
 		workspaceObj.parentUrl = projecturl
 	} else {
+		isstream = status.metaData.isstream
 		workspaceObj = extractWsObj(status)
 	}
 
@@ -231,7 +232,7 @@ func loadOp() {
 		fmt.Printf("Type: Repository Workspace\n")
 	}
 
-	scmLoad(client, workspaceObj, *workspace, *userId, *sandboxPath, status)
+	scmLoad(client, workspaceObj, isstream, *userId, *sandboxPath, status)
 
 	fmt.Printf("Load Successful\n")
 }
