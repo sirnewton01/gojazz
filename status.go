@@ -153,7 +153,7 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 
 		if !info.IsDir() {
 			// Check the modified time
-			if meta.LasModified != info.ModTime().Unix() {
+			if meta.LastModified != info.ModTime().Unix() {
 				// Different sizes mean that the file has changed for sure
 				if meta.Size != info.Size() {
 					status.fileModified(meta, path, sandboxPath)

@@ -13,13 +13,13 @@ const (
 
 // TODO convert into a smaller object
 type metaObject struct {
-	Path        string
-	ItemId      string
-	StateId     string
-	LasModified int64
-	Size        int64
-	Hash        string
-	ComponentId string
+	Path         string
+	ItemId       string
+	StateId      string
+	LastModified int64
+	Size         int64
+	Hash         string
+	ComponentId  string
 }
 
 type metaData struct {
@@ -27,6 +27,7 @@ type metaData struct {
 	componentEtag map[string]string
 	workspaceName string
 	isstream      bool
+	ccmBaseUrl    string
 	workspaceId   string
 	projectUrl    string
 	userId        string
@@ -53,6 +54,7 @@ func (metadata *metaData) load(path string) error {
 		decoder := gob.NewDecoder(file)
 		err = decoder.Decode(&metadata.workspaceName)
 		err = decoder.Decode(&metadata.isstream)
+		err = decoder.Decode(&metadata.ccmBaseUrl)
 		err = decoder.Decode(&metadata.workspaceId)
 		err = decoder.Decode(&metadata.projectUrl)
 		err = decoder.Decode(&metadata.userId)
@@ -74,6 +76,7 @@ func (metadata *metaData) save(path string) error {
 		encoder := gob.NewEncoder(file)
 		err = encoder.Encode(&metadata.workspaceName)
 		err = encoder.Encode(&metadata.isstream)
+		err = encoder.Encode(&metadata.ccmBaseUrl)
 		err = encoder.Encode(&metadata.workspaceId)
 		err = encoder.Encode(&metadata.projectUrl)
 		err = encoder.Encode(&metadata.userId)

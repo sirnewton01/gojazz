@@ -76,17 +76,17 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 	defaultComponentId := ""
 	for _, component := range workspaceObj.Children {
 		if len(workspaceObj.Children) == 0 {
-			defaultComponentId = component.RTCSCM.ItemId
+			defaultComponentId = component.ScmInfo.ItemId
 			break
 		}
 
 		if strings.HasSuffix(component.Name, "Default Component") {
-			defaultComponentId = component.RTCSCM.ItemId
+			defaultComponentId = component.ScmInfo.ItemId
 			break
 		}
 	}
 	if defaultComponentId == "" {
-		defaultComponentId = workspaceObj.Children[0].RTCSCM.ItemId
+		defaultComponentId = workspaceObj.Children[0].ScmInfo.ItemId
 	}
 
 	for modifiedpath, _ := range status.Modified {
@@ -166,9 +166,9 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 			meta := metaObject{}
 			meta.Path = addedpath
-			meta.ItemId = fsObject.RTCSCM.ItemId
-			meta.StateId = fsObject.RTCSCM.StateId
-			meta.ComponentId = fsObject.RTCSCM.ComponentId
+			meta.ItemId = fsObject.ScmInfo.ItemId
+			meta.StateId = fsObject.ScmInfo.StateId
+			meta.ComponentId = fsObject.ScmInfo.ComponentId
 
 			status.metaData.simplePut(meta, sandboxPath)
 		} else {
@@ -245,7 +245,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 	//  looking at the changes page
 	projectId := status.metaData.projectId()
 
-	request, err := http.NewRequest("POST", jazzHubBaseUrl+"/code/jazz/Workspace/"+workspaceObj.RTCSCM.ItemId+"/file/"+status.metaData.userId+"-OrionContent/"+projectId,
+	request, err := http.NewRequest("POST", jazzHubBaseUrl+"/code/jazz/Workspace/"+workspaceObj.ScmInfo.ItemId+"/file/"+status.metaData.userId+"-OrionContent/"+projectId,
 		strings.NewReader("{\"Load\": true}"))
 	if err != nil {
 		panic(err)
@@ -290,16 +290,16 @@ func checkinFile(client *Client, localPath string, sandboxPath string, postUrl s
 
 	newmeta := metaObject{}
 	newmeta.Path = sandboxPath
-	newmeta.ItemId = fsObject.RTCSCM.ItemId
-	newmeta.StateId = fsObject.RTCSCM.StateId
-	newmeta.ComponentId = fsObject.RTCSCM.ComponentId
+	newmeta.ItemId = fsObject.ScmInfo.ItemId
+	newmeta.StateId = fsObject.ScmInfo.StateId
+	newmeta.ComponentId = fsObject.ScmInfo.ComponentId
 
 	info, err := os.Stat(localPath)
 	if err != nil {
 		panic(err)
 	}
 
-	newmeta.LasModified = info.ModTime().Unix()
+	newmeta.LastModified = info.ModTime().Unix()
 	newmeta.Size = info.Size()
 
 	newmeta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))

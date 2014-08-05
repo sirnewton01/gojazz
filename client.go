@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -124,4 +126,45 @@ func (jClient *Client) Do(request *http.Request) (*http.Response, error) {
 	}
 
 	return resp, nil
+}
+
+func (client *Client) findProject(name string) (Project, error) {
+	projectEscaped := url.QueryEscape(name)
+
+	// Discover the RTC repo for this project
+	request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectByName?projectName="+projectEscaped+"&refresh=true&includeMembers=false&includeHidden=true", nil)
+	if err != nil {
+		return Project{}, err
+	}
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return Project{}, err
+	}
+	if resp.StatusCode != 200 {
+		fmt.Printf("Response Status: %v\n", resp.StatusCode)
+		b, _ := ioutil.ReadAll(resp.Body)
+		fmt.Printf("Response Body\n%v\n", string(b))
+		return Project{}, errors.New("Bad response from server")
+	}
+	result := &Project{}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return Project{}, err
+	}
+	err = json.Unmarshal(b, result)
+	if err != nil {
+		return Project{}, err
+	}
+
+	return *result, nil
+}
+
+func (client *Client) findCcmBaseUrl(projectName string) (string, error) {
+	project, err := client.findProject(projectName)
+	if err != nil {
+		return "", err
+	}
+
+	return project.CcmBaseUrl, nil
 }

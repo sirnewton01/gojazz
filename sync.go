@@ -42,5 +42,5 @@ func syncOp() {
 	}
 
 	scmCheckin(client, status, *sandboxPath)
-	scmLoad(client, extractWsObj(status), status.metaData.isstream, status.metaData.userId, *sandboxPath, status)
+	scmLoad(client, status.metaData.ccmBaseUrl, status.metaData.workspaceId, status.metaData.isstream, status.metaData.userId, *sandboxPath, status)
 }

@@ -3,14 +3,10 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,26 +15,9 @@ import (
 )
 
 const (
-	numGoRoutines = 15
+	numGoRoutines = 10
 	bufferSize    = 1000
 )
-
-type FSObject struct {
-	Name        string
-	Directory   bool
-	RTCSCM      SCMObject
-	Children    []FSObject
-	parentUrl   string
-	sandboxPath string
-	etag        string
-}
-
-type SCMObject struct {
-	ComponentId string
-	ItemId      string
-	StateId     string
-	Type        string
-}
 
 type ProjectResults struct {
 	Projects []Project `json:"projects"`
@@ -114,8 +93,9 @@ func loadOp() {
 
 	fmt.Printf("Loading into %v...\n", *sandboxPath)
 
-	var workspaceObj FSObject
 	var isstream bool
+	workspaceId := ""
+	ccmBaseUrl := ""
 
 	// This is either a fresh sandbox or project/stream/workspace information was provided
 	if status == nil || projectName != "" {
@@ -123,437 +103,296 @@ func loadOp() {
 			panic(errors.New("Provide a project to load"))
 		}
 
-		projectEscaped := url.QueryEscape(projectName)
-
-		// Discover the RTC repo for this project
-		request, err := http.NewRequest("GET", jazzHubBaseUrl+"/manage/service/com.ibm.team.jazzhub.common.service.IProjectService/projectByName?projectName="+projectEscaped+"&refresh=true&includeMembers=false&includeHidden=true", nil)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err.Error())
-			return
-		}
-
-		resp, err := client.Do(request)
+		ccmBaseUrl, err = client.findCcmBaseUrl(projectName)
 		if err != nil {
 			panic(err)
 		}
-		if resp.StatusCode != 200 {
-			fmt.Printf("Response Status: %v\n", resp.StatusCode)
-			b, _ := ioutil.ReadAll(resp.Body)
-			fmt.Printf("Response Body\n%v\n", string(b))
-			panic("Error")
-		}
-		result := &Project{}
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
-		err = json.Unmarshal(b, result)
-		if err != nil {
-			panic(err)
-		}
-
-		if result.CcmBaseUrl == "" {
-			panic(errors.New("Project not found"))
-		}
-
-		orion_fs := result.CcmBaseUrl + "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa"
-		projecturl := orion_fs + "/" + projectName
 
 		// Find a repository workspace with the correct naming convention
 		// Failing that, create one.
 		if *workspace {
 			isstream = false
 
-			// Fetch all of the streams from the project
-			request, err = http.NewRequest("GET", orion_fs, nil)
+			// FIXME this criteria (based on the name) is not good
+			workspaceId, err = FindRepositoryWorkspace(client, ccmBaseUrl, projectName+" Workspace")
 			if err != nil {
 				panic(err)
 			}
 
-			workspaceList := fetchFSObject(client, request)
-
-			// FIXME this criteria is not good, there's no way to discover if the workspace flows with the specified stream
-			for _, w := range workspaceList.Children {
-				if w.Name == projectName+" Workspace" {
-					workspaceObj = w
-					break
-				}
-			}
-
 			// FIXME this should create a new repository workspace from the specified stream
-			if workspaceObj.Name == "" {
+			if workspaceId == "" {
 				panic(errors.New("No repository workspace found\n"))
 			}
 		} else {
 			isstream = true
 
-			// Fetch all of the streams from the project
-			request, err = http.NewRequest("GET", projecturl, nil)
-			if err != nil {
-				panic(err)
-			}
-			projectObj := fetchFSObject(client, request)
-
-			for _, childStream := range projectObj.Children {
-				if childStream.Name == *stream {
-					workspaceObj = childStream
-					break
+			// User provided the stream name to load
+			if *stream != "" {
+				workspaceId, err = FindStream(client, ccmBaseUrl, projectName, *stream)
+				if err != nil {
+					panic(err)
 				}
 
-				// The default stream for a project has the form "user | projectName Stream"
-				if *stream == "" && childStream.Name == projectName+" Stream" {
-					workspaceObj = childStream
-				}
-			}
-
-			// Still no stream found, fail if user specified a stream, pick the first one otherwise
-			if workspaceObj.Name == "" {
-				if *stream != "" {
+				if workspaceId == "" {
 					panic(errors.New("Stream with name " + *stream + " not found"))
 				}
+			} else {
+				// Use the stream with the form "user | projectName Stream"
+				workspaceId, err = FindStream(client, ccmBaseUrl, projectName, projectName+" Stream")
+				if err != nil {
+					panic(err)
+				}
 
-				if len(projectObj.Children) == 0 {
+				if workspaceId == "" {
 					panic(errors.New("No default stream could be found for this project. Is it a Git project?"))
 				}
-				workspaceObj = projectObj.Children[0]
 			}
 		}
-
-		workspaceObj.parentUrl = projecturl
 	} else {
 		isstream = status.metaData.isstream
-		workspaceObj = extractWsObj(status)
+		workspaceId = status.metaData.workspaceId
+		ccmBaseUrl = status.metaData.ccmBaseUrl
 	}
 
-	fmt.Printf("Loading from %v\n", workspaceObj.Name)
 	if isstream {
 		fmt.Printf("Type: Stream\n")
 	} else {
 		fmt.Printf("Type: Repository Workspace\n")
 	}
 
-	scmLoad(client, workspaceObj, isstream, *userId, *sandboxPath, status)
+	scmLoad(client, ccmBaseUrl, workspaceId, isstream, *userId, *sandboxPath, status)
 
 	fmt.Printf("Load Successful\n")
 }
 
-func extractWsObj(status *status) FSObject {
-	var workspaceObj FSObject
-
-	workspaceObj.Directory = true
-	workspaceObj.RTCSCM.Type = "Workspace"
-	workspaceObj.Name = status.metaData.workspaceName
-	workspaceObj.RTCSCM.ItemId = status.metaData.workspaceId
-	workspaceObj.parentUrl = status.metaData.projectUrl
-
-	return workspaceObj
-}
-
-func scmLoad(client *Client, workspaceObj FSObject, stream bool, userId string, sandbox string, status *status) {
+func scmLoad(client *Client, ccmBaseUrl string, workspaceId string, stream bool, userId string, sandbox string, status *status) {
 	newMetaData := newMetaData()
 	newMetaData.initConcurrentWrite()
 	newMetaData.isstream = stream
 	newMetaData.userId = userId
-
-	newMetaData.workspaceName = workspaceObj.Name
-	newMetaData.workspaceId = workspaceObj.RTCSCM.ItemId
-	newMetaData.projectUrl = workspaceObj.parentUrl
-
-	workspaceObj.sandboxPath = sandbox
-
-	queue := make(chan FSObject, bufferSize)
-
-	// Track how much work needs to be done and send a signal on the
-	//  finished channel when its done
-	tracker := make(chan int)
-	finished := make(chan bool)
-	go func() {
-		work := 1
-		for work > 0 {
-			work += <-tracker
-		}
-		finished <- true
-	}()
+	newMetaData.ccmBaseUrl = ccmBaseUrl
+	newMetaData.workspaceId = workspaceId
 
 	// Delete the old metadata
-	os.Remove(filepath.Join(sandbox, metadataFileName))
+	metadataFile := filepath.Join(sandbox, metadataFileName)
+	os.Remove(metadataFile)
 
-	loadChild(client, sandbox, workspaceObj, queue, tracker, status, newMetaData)
+	if status != nil {
+		// Delete any files that were added/modified (they should already be backed up)
+		for addedPath, _ := range status.Added {
+			err := os.RemoveAll(filepath.Join(sandbox, addedPath))
+			if err != nil {
+				panic(err)
+			}
+		}
+		for modPath, _ := range status.Modified {
+			err := os.RemoveAll(filepath.Join(sandbox, modPath))
+			if err != nil {
+				panic(err)
+			}
+		}
+	} else {
+		// Check if there are any files in the sandbox, fail if there are any
+		stat, _ := os.Stat(sandbox)
 
-	createFiles := func() {
+		if stat != nil {
+			s, err := os.Open(sandbox)
+			if err != nil {
+				panic(err)
+			}
+
+			children, err := s.Readdirnames(-1)
+			if err != nil {
+				panic(err)
+			}
+
+			if len(children) > 0 {
+				panic(errors.New("Sorry, there are files in the sandbox directory that will be clobbered."))
+			}
+		}
+	}
+
+	// Find all of the components of the remote workspace and then walk over each one
+	componentIds, err := FindComponents(client, ccmBaseUrl, workspaceId)
+	if err != nil {
+		panic(err)
+	}
+
+	// Walk through the remote components creating directories, if necessary and cleaning up any deleted files
+	for _, componentId := range componentIds {
+		loadComponent(client, ccmBaseUrl, workspaceId, componentId, sandbox, newMetaData, status)
+	}
+
+	newMetaData.save(metadataFile)
+}
+
+func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, componentId string, sandbox string, newMetaData *metaData, status *status) {
+	// Optimization: if status is unchanged and the component's ETag is the same
+	//  then we can skip downloading this component
+	if status != nil && status.unchanged() {
+		// TODO implement the optimization
+	}
+
+	// Queue of paths to download (empty string means we are done)
+	downloadQueue := make(chan string, bufferSize)
+	// Queue of finished messages from the go routines
+	finished := make(chan bool)
+
+	// Load status updates
+	trackerFinish := make(chan bool)
+	workTracker := make(chan bool)
+	workTransfer := make(chan int64)
+	go func() {
+		work := 0
+		worked := 0
+		transferred := int64(0)
+		lastStringLength := 0
+
 		for {
-			fsObject := <-queue
-			loadChild(client, sandbox, fsObject, queue, tracker, status, newMetaData)
-		}
-	}
-
-	// downloading go routines
-	for i := 0; i < numGoRoutines; i++ {
-		go createFiles()
-	}
-
-	<-finished
-
-	// As a last pass, check all of the files at the top of the sandbox to verify
-	//  that they are in the metadata. They are either detached from the stream contents
-	//  or were added by the user. Either way, they should be deleted.
-	dir, err := os.Open(sandbox)
-	if err != nil {
-		panic(err)
-	}
-	roots, err := dir.Readdirnames(-1)
-	if err != nil {
-		panic(err)
-	}
-	for _, root := range roots {
-		if _, ok := newMetaData.get(filepath.Join(sandbox, root), sandbox); !ok {
-			// Skip the staging forlder or the metadata file
-			if strings.Contains(root, stageFolder) || strings.Contains(root, metadataFileName) || strings.Contains(root, backupFolder) {
-				continue
-			}
-			err = os.RemoveAll(root)
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
-
-	newMetaData.save(filepath.Join(sandbox, metadataFileName))
-}
-
-func extractComponentEtag(rawEtag string) string {
-	rawEtag = strings.Replace(rawEtag, "\"", "", -1)
-	if rawEtag != "" {
-		rawEtag = strings.Split(rawEtag, " ")[1]
-	}
-
-	return rawEtag
-}
-
-func loadChild(client *Client, sandbox string, fsObject FSObject, queue chan FSObject, tracker chan int, status *status, newMetaData *metaData) {
-	url := fsObject.parentUrl
-
-	meta := metaObject{}
-	meta.ComponentId = fsObject.RTCSCM.ComponentId
-	meta.ItemId = fsObject.RTCSCM.ItemId
-	meta.StateId = fsObject.RTCSCM.StateId
-
-	// Workspaces, streams and component are addressable only by their Item ID's
-	if fsObject.RTCSCM.Type == "Workspace" || fsObject.RTCSCM.Type == "Component" {
-		url = url + "/" + fsObject.RTCSCM.ItemId
-	} else {
-		url = url + "/" + fsObject.Name
-	}
-
-	if fsObject.Directory {
-		sandboxPath := fsObject.sandboxPath
-
-		request, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			panic(err)
-		}
-
-		resp, err := client.Do(request)
-		if err != nil {
-			panic(err)
-		}
-
-		if resp.StatusCode != 200 {
-			fmt.Printf("Error Loading %v\n", url)
-			fmt.Printf("Response Status: %v\n", resp.StatusCode)
-			b, _ := ioutil.ReadAll(resp.Body)
-			fmt.Printf("Response Body:\n%v\n", string(b))
-			panic("Error")
-		}
-
-		etag := extractComponentEtag(resp.Header.Get("ETag"))
-		if fsObject.etag != "" && fsObject.etag != etag {
-			panic("Stream has changed while updating:" + fsObject.etag + " " + etag)
-		}
-
-		// Optimization, skip loading a component if there are no changes
-		//  and the etag is the same as last time.
-		if fsObject.RTCSCM.Type == "Component" {
-			componentId := fsObject.RTCSCM.ItemId
-
-			newMetaData.componentEtag[componentId] = etag
-
-			if status != nil && status.unchanged() && status.metaData.componentEtag[componentId] == etag {
-				// FIXME this optimization does _not_ work for multiple components
-
-				for k, v := range status.metaData.pathMap {
-					newMetaData.pathMap[k] = v
-				}
-
-				tracker <- -1
-				return
-			}
-		}
-
-		directoryObj := &FSObject{}
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
-		err = json.Unmarshal(b, directoryObj)
-		if err != nil {
-			panic(err)
-		}
-
-		resp.Body.Close()
-
-		// Workspaces and component don't get their own directory, the children are loaded directly
-		//  underneath the sandbox root.
-		if fsObject.RTCSCM.Type != "Workspace" && fsObject.RTCSCM.Type != "Component" {
-			sandboxPath = filepath.Join(sandboxPath, fsObject.Name)
-			meta.Path = sandboxPath
-
-			// Create the directory if it doesn't already exist
-			err := os.MkdirAll(sandboxPath, 0700)
-			if err != nil {
-				panic(err)
-			}
-
-			info, err := os.Stat(sandboxPath)
-			if err != nil {
-				panic(err)
-			}
-
-			meta.LasModified = info.ModTime().Unix()
-		}
-
-		if fsObject.RTCSCM.Type == "Folder" {
-			// If this is a folder (not project area, workspace or component) then delete
-			//  any extra children files/folders on disk
-
-			dir, err := os.Open(sandboxPath)
-			if err != nil {
-				panic(err)
-			}
-
-			children, err := dir.Readdirnames(-1)
-			if err != nil {
-				panic(err)
-			}
-
-			for _, child := range children {
-				found := false
-				for _, remoteChild := range directoryObj.Children {
-					if remoteChild.Name == child {
-						found = true
-						break
-					}
-				}
-
-				// Delete this file/folder because it no longer exists in the stream
-				if !found {
-					err = os.RemoveAll(filepath.Join(sandboxPath, child))
-					if err != nil {
-						panic(err)
-					}
-				}
-			}
-		}
-
-		// Add new tasks for each of the children
-		tracker <- len(directoryObj.Children)
-		for _, child := range directoryObj.Children {
-			child.parentUrl = url
-			child.sandboxPath = sandboxPath
-			child.etag = etag
-
-			// Try queueing the child for another goroutine to handle it
-			// Otherwise, we will recurse depth-first ourselves to make sure
-			//  that we don't deadlock
 			select {
-			case queue <- child:
-				break
-			default:
-				loadChild(client, sandbox, child, queue, tracker, status, newMetaData)
+			case moreBytes := <-workTransfer:
+				transferred += moreBytes
+			case added := <-workTracker:
+				if added {
+					work += 1
+				} else {
+					worked += 1
+				}
+
+				// Backspace out the last line that was printed
+				for i := 0; i < lastStringLength; i++ {
+					fmt.Printf("\b")
+				}
+
+				lastStringLength, _ = fmt.Printf("Loaded %v (of %v) files. Bytes loaded: %v", worked, work, transferred)
+			case <-trackerFinish:
+				fmt.Print("\n")
 			}
 		}
-	} else {
-		// Check if we need to download anything
-		sandboxPath := filepath.Join(fsObject.sandboxPath, fsObject.Name)
+	}()
 
-		_, err := os.Stat(sandboxPath)
-		if err == nil && status != nil {
-			rel, err := filepath.Rel(sandbox, sandboxPath)
-			if err != nil {
-				panic(err)
-			}
-
-			// File exists, check if the user modified it
-			if !status.Modified[rel] && status.metaData != nil {
-				// The file is unchanged locally and in the repository
-				oldMeta, ok := status.metaData.get(sandboxPath, sandbox)
-
-				if ok && oldMeta.StateId == fsObject.RTCSCM.StateId && oldMeta.ItemId == fsObject.RTCSCM.ItemId {
-					newMetaData.put(oldMeta, sandbox)
-					tracker <- -1
+	// Downloading gorountine
+	downloadFiles := func() {
+		for {
+			select {
+			case pathToDownload := <-downloadQueue:
+				if pathToDownload == "" {
+					// We're done
+					finished <- true
 					return
 				}
+
+				workTracker <- true
+
+				remoteFile, err := Open(client, ccmBaseUrl, workspaceId, componentId, pathToDownload)
+				if err != nil {
+					panic(err)
+				}
+
+				scmInfo := remoteFile.info.ScmInfo
+				localPath := filepath.Join(sandbox, pathToDownload)
+
+				// Optimization: State ID is the same as last time and there were no local modifications
+				if status != nil && !status.Modified[pathToDownload] && !status.Deleted[pathToDownload] {
+					prevMeta, ok := status.metaData.get(localPath, sandbox)
+
+					if ok && prevMeta.StateId == scmInfo.StateId {
+						// Push the old metadata forward for this file
+						remoteFile.Close()
+						newMetaData.put(prevMeta, sandbox)
+						workTracker <- false
+						continue
+					}
+				}
+
+				localFile, err := os.Create(filepath.Join(sandbox, pathToDownload))
+				if err != nil {
+					panic(err)
+				}
+
+				// Setup the SHA-1 hash of the file contents
+				hash := sha1.New()
+				tee := io.MultiWriter(localFile, hash)
+
+				numBytes, err := io.Copy(tee, remoteFile)
+				if err != nil {
+					panic(err)
+				}
+				
+				workTransfer <- numBytes
+
+				localFile.Close()
+				remoteFile.Close()
+
+				stat, _ := os.Stat(localPath)
+
+				meta := metaObject{
+					Path:         localPath,
+					ItemId:       scmInfo.ItemId,
+					StateId:      scmInfo.StateId,
+					ComponentId:  scmInfo.ComponentId,
+					LastModified: stat.ModTime().Unix(),
+					Size:         stat.Size(),
+					Hash:         base64.StdEncoding.EncodeToString(hash.Sum(nil)),
+				}
+
+				newMetaData.put(meta, sandbox)
+
+				workTracker <- false
 			}
 		}
-
-		// Too bad, we need to download the contents
-		request, err := http.NewRequest("GET", url+"?op=readContent", nil)
-
-		if err != nil {
-			panic(err)
-		}
-
-		resp, err := client.Do(request)
-		if err != nil {
-			panic(err)
-		}
-
-		if resp.StatusCode != 200 {
-			fmt.Printf("Error Loading %v/%v\n", fsObject.sandboxPath, fsObject.Name)
-			fmt.Printf("Response Status: %v\n", resp.StatusCode)
-			b, _ := ioutil.ReadAll(resp.Body)
-			fmt.Printf("Response Body\n%v\n", string(b))
-			panic("Error")
-		}
-
-		etag := extractComponentEtag(resp.Header.Get("ETag"))
-		if fsObject.etag != "" && fsObject.etag != etag {
-			panic("Stream has changed while updating: " + fsObject.etag + " " + etag)
-		}
-
-		file, err := os.Create(sandboxPath)
-
-		if err != nil {
-			panic(err)
-		}
-
-		// Setup the SHA-1 hash of the file contents
-		hash := sha1.New()
-		tee := io.MultiWriter(file, hash)
-
-		_, err = io.Copy(tee, resp.Body)
-
-		if err != nil {
-			panic(err)
-		}
-
-		resp.Body.Close()
-		file.Close()
-
-		meta.Path = sandboxPath
-		info, err := os.Stat(sandboxPath)
-		if err != nil {
-			panic(err)
-		}
-		meta.LasModified = info.ModTime().Unix()
-		meta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
-		meta.Size = info.Size()
 	}
 
-	if meta.Path != "" {
-		newMetaData.put(meta, sandbox)
+	for i := 0; i < numGoRoutines; i++ {
+		go downloadFiles()
 	}
 
-	// This task is done
-	tracker <- -1
+	err := Walk(client, ccmBaseUrl, workspaceId, componentId, func(p string, file File) error {
+		localPath := filepath.Join(sandbox, p)
+
+		if file.info.Directory {
+			workTracker <- true
+			// Create if it doesn't already exist
+			stat, _ := os.Stat(localPath)
+
+			if stat == nil {
+				err := os.MkdirAll(localPath, 0700)
+				if err != nil {
+					return err
+				}
+			} else if !stat.IsDir() {
+				// Weird, there's a file with the same name as the directory in the workspace here
+				os.Remove(localPath)
+				err := os.MkdirAll(localPath, 0700)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Push the new metadata for this directory
+			scmInfo := file.info.ScmInfo
+			meta := metaObject{Path: localPath, ItemId: scmInfo.ItemId, StateId: scmInfo.StateId, ComponentId: scmInfo.ComponentId}
+			newMetaData.put(meta, sandbox)
+
+			workTracker <- false
+		} else {
+			// Push the file path into the queue for download (unless the file hasn't changed)
+			downloadQueue <- p
+		}
+
+		return nil
+	})
+
+	// Send the stop signal to all download routines
+	for i := 0; i < numGoRoutines; i++ {
+		downloadQueue <- ""
+		<-finished
+	}
+
+	// Tell the tracker to finish reporting its status
+	trackerFinish <- true
+
+	if err != nil {
+		panic(err)
+	}
 }
