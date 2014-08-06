@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -32,33 +31,6 @@ func findSandbox(startingPath string) (p string) {
 	}
 
 	return startingPath
-}
-
-// TODO do we really need this?
-func fetchFSObject(client *Client, request *http.Request) *FileInfo {
-	resp, err := client.Do(request)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		fmt.Printf("Response Status: %v\n", resp.StatusCode)
-		b, _ := ioutil.ReadAll(resp.Body)
-		fmt.Printf("Response Body\n%v\n", string(b))
-		panic("Error")
-	}
-	fsObject := &FileInfo{}
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-	err = json.Unmarshal(b, fsObject)
-	if err != nil {
-		panic(err)
-	}
-
-	return fsObject
 }
 
 func FindRepositoryWorkspace(client *Client, ccmBaseUrl, workspaceName string) (string, error) {
@@ -151,10 +123,25 @@ func FindStream(client *Client, ccmBaseUrl, projectName, streamName string) (str
 	return "", nil
 }
 
-func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]string, error) {
+func FindComponentIds(client *Client, ccmBaseUrl string, workspaceId string) ([]string, error) {
+	result := []string{}
+
+	components, err := FindComponents(client, ccmBaseUrl, workspaceId)
+	if err != nil {
+		return result, err
+	}
+
+	for _, component := range components {
+		result = append(result, component.ScmInfo.ItemId)
+	}
+
+	return result, nil
+}
+
+func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]FileInfo, error) {
 	url := path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_/", workspaceId)
 	url = strings.Replace(url, ":/", "://", 1)
-	result := []string{}
+	result := []FileInfo{}
 
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -174,7 +161,7 @@ func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]st
 	}
 
 	// The filesystem service renders the workspace as a directory.
-	// Decode into a file object so that we can get the components and the item ID's
+	// Decode into a file object so that we can get the components
 	workspace := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -185,9 +172,7 @@ func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]st
 		return result, &FileError{Msg: err.Error()}
 	}
 
-	for _, component := range workspace.Children {
-		result = append(result, component.ScmInfo.ItemId)
-	}
+	result = workspace.Children
 
 	return result, nil
 }
@@ -392,6 +377,36 @@ func Mkdir(client *Client, ccmBaseUrl string, workspaceId string, componentId, p
 	return f, nil
 }
 
+func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId string, p string) error {
+	f := &File{}
+	f.client = client
+	f.url = path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, p) + "?op=delete"
+	f.url = strings.Replace(f.url, ":/", "://", 1)
+
+	request, err := http.NewRequest("POST", f.url, nil)
+	if err != nil {
+		return &FileError{Msg: err.Error()}
+	}
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return &FileError{Msg: err.Error()}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := ioutil.ReadAll(resp.Body)
+		body := string(b)
+		// The service returns 500 instead of 404
+		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
+			return &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+		}
+		return &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+	}
+
+	return nil
+}
+
 func (f *File) Read(p []byte) (int, error) {
 	if f.reading == nil {
 		request, err := http.NewRequest("GET", f.url+"?op=readContent", nil)
@@ -424,7 +439,7 @@ func (f *File) Read(p []byte) (int, error) {
 }
 
 func (f *File) Write(contents io.Reader) error {
-	request, err := http.NewRequest("POST", f.url+"?opt=writeContent", contents)
+	request, err := http.NewRequest("POST", f.url+"?op=writeContent", contents)
 	if err != nil {
 		return &FileError{Msg: err.Error()}
 	}
@@ -444,6 +459,18 @@ func (f *File) Write(contents io.Reader) error {
 		}
 		return &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
 	}
+
+	info := &FileInfo{}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return &FileError{Msg: err.Error()}
+	}
+	err = json.Unmarshal(b, info)
+	if err != nil {
+		return &FileError{Msg: err.Error()}
+	}
+
+	f.info = *info
 
 	return nil
 }
@@ -590,6 +617,10 @@ func internalWalk(data walkData) error {
 		return err
 	}
 
+	if f.etag != data.startingEtag {
+		return &FileError{Msg: "Configuration has changed in the middle of walking the tree"}
+	}
+
 	err = data.wf(data.path, *f)
 	if err != nil {
 		return err
@@ -610,6 +641,7 @@ func internalWalk(data walkData) error {
 			workTracker:  data.workTracker,
 		}
 
+		// Recurse ourselves if nobody else can take the task
 		data.workTracker <- true
 		select {
 		case data.queue <- childData:

@@ -149,6 +149,7 @@ func loadOp() {
 			}
 		}
 	} else {
+		projectName = status.metaData.projectName
 		isstream = status.metaData.isstream
 		workspaceId = status.metaData.workspaceId
 		ccmBaseUrl = status.metaData.ccmBaseUrl
@@ -160,17 +161,18 @@ func loadOp() {
 		fmt.Printf("Type: Repository Workspace\n")
 	}
 
-	scmLoad(client, ccmBaseUrl, workspaceId, isstream, *userId, *sandboxPath, status)
+	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, *userId, *sandboxPath, status)
 
 	fmt.Printf("Load Successful\n")
 }
 
-func scmLoad(client *Client, ccmBaseUrl string, workspaceId string, stream bool, userId string, sandbox string, status *status) {
+func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId string, stream bool, userId string, sandbox string, status *status) {
 	newMetaData := newMetaData()
 	newMetaData.initConcurrentWrite()
 	newMetaData.isstream = stream
 	newMetaData.userId = userId
 	newMetaData.ccmBaseUrl = ccmBaseUrl
+	newMetaData.projectName = projectName
 	newMetaData.workspaceId = workspaceId
 
 	// Delete the old metadata
@@ -213,7 +215,7 @@ func scmLoad(client *Client, ccmBaseUrl string, workspaceId string, stream bool,
 	}
 
 	// Find all of the components of the remote workspace and then walk over each one
-	componentIds, err := FindComponents(client, ccmBaseUrl, workspaceId)
+	componentIds, err := FindComponentIds(client, ccmBaseUrl, workspaceId)
 	if err != nil {
 		panic(err)
 	}
@@ -266,7 +268,7 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 
 				lastStringLength, _ = fmt.Printf("Loaded %v (of %v) files. Bytes loaded: %v", worked, work, transferred)
 			case <-trackerFinish:
-				fmt.Print("\n")
+				return
 			}
 		}
 	}()
@@ -318,7 +320,7 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 				if err != nil {
 					panic(err)
 				}
-				
+
 				workTransfer <- numBytes
 
 				localFile.Close()
@@ -391,6 +393,8 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 
 	// Tell the tracker to finish reporting its status
 	trackerFinish <- true
+	// Complete the newline for the progress tracker
+	fmt.Printf("\n")
 
 	if err != nil {
 		panic(err)

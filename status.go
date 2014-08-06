@@ -56,7 +56,10 @@ func (status *status) unchanged() bool {
 }
 
 func (status *status) String() string {
-	result := status.metaData.workspaceName + "\n"
+	// TODO hit the server and find the current name of this workspace
+	//result := status.metaData.workspaceName + "\n"
+
+	result := ""
 
 	if status.metaData.isstream {
 		result = result + "Type: Stream\n"
@@ -171,7 +174,9 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 						return err
 					}
 
-					if meta.Hash != base64.StdEncoding.EncodeToString(hash.Sum(nil)) {
+					newHash := base64.StdEncoding.EncodeToString(hash.Sum(nil))
+
+					if meta.Hash != newHash {
 						status.fileModified(meta, path, sandboxPath)
 					}
 				}

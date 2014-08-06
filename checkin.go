@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -59,42 +60,37 @@ func checkinOp() {
 }
 
 func scmCheckin(client *Client, status *status, sandboxPath string) {
-	workspaceUrl := status.metaData.projectUrl + "/" + status.metaData.workspaceId
-
 	// Get the workspace in order to force the authentication to happen
 	//  and get the list of components.
-	req, err := http.NewRequest("GET", workspaceUrl, nil)
+	workspaceId := status.metaData.workspaceId
+	ccmBaseUrl := status.metaData.ccmBaseUrl
+
+	components, err := FindComponents(client, status.metaData.ccmBaseUrl, status.metaData.workspaceId)
 	if err != nil {
 		panic(err)
 	}
-
-	workspaceObj := fetchFSObject(client, req)
 
 	// TODO Probe the remote workspace to verify that it is in sync
 	//   - Tell the user if they are out of sync
 
 	defaultComponentId := ""
-	for _, component := range workspaceObj.Children {
-		if len(workspaceObj.Children) == 0 {
-			defaultComponentId = component.ScmInfo.ItemId
-			break
-		}
-
-		if strings.HasSuffix(component.Name, "Default Component") {
+	for idx, component := range components {
+		if idx == 0 || strings.HasSuffix(component.Name, "Default Component") {
 			defaultComponentId = component.ScmInfo.ItemId
 			break
 		}
 	}
 	if defaultComponentId == "" {
-		defaultComponentId = workspaceObj.Children[0].ScmInfo.ItemId
+		panic(errors.New("There are no components in the repository workspace"))
 	}
 
 	for modifiedpath, _ := range status.Modified {
 		fmt.Printf("%v (Modified)\n", modifiedpath)
-		modifiedpath = filepath.Join(sandboxPath, modifiedpath)
 
-		// TODO handle the case where a file gets replaced with a directory with the same name
-		meta, ok := status.metaData.get(modifiedpath, sandboxPath)
+		localpath := filepath.Join(sandboxPath, modifiedpath)
+		stagepath := filepath.Join(sandboxPath, ".jazzstage", modifiedpath)
+
+		meta, ok := status.metaData.get(localpath, sandboxPath)
 		componentId := ""
 		if !ok {
 			panic("Metadata not found for file")
@@ -102,14 +98,22 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 			componentId = meta.ComponentId
 		}
 
-		relPath, err := filepath.Rel(sandboxPath, modifiedpath)
+		remoteFile, err := Open(client, ccmBaseUrl, workspaceId, componentId, modifiedpath)
 		if err != nil {
 			panic(err)
 		}
 
-		postUrl := workspaceUrl + "/" + componentId + "/" + relPath + "?op=writeContent"
+		// TODO better checking and matching for the file, perhaps by item ID?
+		if remoteFile.info.Directory {
+			panic(fmt.Sprintf("Cannot check-in file at path %v. There is a folder at this location on the remote.", modifiedpath))
+		}
+		// Ooops, this is the wrong file
+		if remoteFile.info.ScmInfo.ItemId != meta.ItemId {
+			panic(fmt.Sprintf("Cannot check-in file at path %v. It is not the same as the one that was originally loaded", modifiedpath))
+		}
 
-		newmeta := checkinFile(client, modifiedpath, sandboxPath, postUrl)
+		newmeta := checkinFile(client, stagepath, remoteFile)
+		newmeta.Path = localpath
 
 		status.metaData.simplePut(newmeta, sandboxPath)
 	}
@@ -126,27 +130,17 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 	for _, addedpath := range addedFiles {
 		fmt.Printf("%v (Added)\n", addedpath)
-		addedpath = filepath.Join(sandboxPath, addedpath)
 
-		info, err := os.Stat(addedpath)
+		localpath := filepath.Join(sandboxPath, addedpath)
+
+		info, err := os.Stat(localpath)
 		if err != nil {
 			panic(err)
 		}
 
-		remotePath, err := filepath.Rel(sandboxPath, addedpath)
-		if err != nil {
-			panic(err)
-		}
-
-		remoteParent := filepath.Dir(remotePath)
-
-		if remoteParent == "." {
-			remoteParent = ""
-		}
-
-		name := filepath.Base(remotePath)
-
-		parentMeta, ok := status.metaData.get(filepath.Dir(addedpath), sandboxPath)
+		// We need to find the component to add this file. It will either be the
+		//  the parent element, which we may have just added, or its the default component.
+		parentMeta, ok := status.metaData.get(filepath.Dir(localpath), sandboxPath)
 		componentId := ""
 		if ok {
 			componentId = parentMeta.ComponentId
@@ -155,44 +149,37 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		}
 
 		if info.IsDir() {
-			url := workspaceUrl + "/" + componentId + "/" + remoteParent + "?op=createFolder&name=" + name
-
-			request, err := http.NewRequest("POST", url, nil)
+			remoteFolder, err := Mkdir(client, ccmBaseUrl, workspaceId, componentId, addedpath)
 			if err != nil {
 				panic(err)
 			}
 
-			fsObject := fetchFSObject(client, request)
-
 			meta := metaObject{}
-			meta.Path = addedpath
-			meta.ItemId = fsObject.ScmInfo.ItemId
-			meta.StateId = fsObject.ScmInfo.StateId
-			meta.ComponentId = fsObject.ScmInfo.ComponentId
+			meta.Path = localpath
+			meta.ItemId = remoteFolder.info.ScmInfo.ItemId
+			meta.StateId = remoteFolder.info.ScmInfo.StateId
+			meta.ComponentId = remoteFolder.info.ScmInfo.ComponentId
 
 			status.metaData.simplePut(meta, sandboxPath)
 		} else {
-			// Pre-create the empty file and then check it in
-			postUrl := workspaceUrl + "/" + componentId + "/" + remoteParent + "?op=createFile&name=" + name
-			createRequest, err := http.NewRequest("POST", postUrl, nil)
+			remoteFile, err := Create(client, ccmBaseUrl, workspaceId, componentId, addedpath)
 			if err != nil {
-				panic(err)
+				// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
+				//  parent directories are not there.
+
+				fileerror, ok := err.(*FileError)
+
+				// TODO create all of the parent directories when this happens
+				if ok && fileerror.StatusCode == 404 {
+					panic(errors.New(fmt.Sprintf("The parent directory of file %v could not be found. Cannot check it in.", addedpath)))
+				} else {
+					panic(err)
+				}
 			}
 
-			resp, err := client.Do(createRequest)
-			if err != nil {
-				panic(err)
-			}
-
-			if resp.StatusCode != 200 {
-				fmt.Printf("Response Status: %v\n", resp.StatusCode)
-				b, _ := ioutil.ReadAll(resp.Body)
-				fmt.Printf("Response Body\n%v\n", string(b))
-				panic("Error")
-			}
-
-			postUrl = workspaceUrl + "/" + componentId + "/" + remotePath + "?op=writeContent"
-			newmeta := checkinFile(client, addedpath, sandboxPath, postUrl)
+			stagepath := filepath.Join(sandboxPath, ".jazzstage", addedpath)
+			newmeta := checkinFile(client, stagepath, remoteFile)
+			newmeta.Path = localpath
 			status.metaData.simplePut(newmeta, sandboxPath)
 		}
 	}
@@ -211,9 +198,13 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		fmt.Printf("%v (Deleted)\n", deletedpath)
 		deletedpath = filepath.Join(sandboxPath, deletedpath)
 
+		componentId := ""
+
 		meta, ok := status.metaData.get(deletedpath, sandboxPath)
 		if !ok {
 			panic("Metadata not found for deleted item")
+		} else {
+			componentId = meta.ComponentId
 		}
 
 		remotePath, err := filepath.Rel(sandboxPath, deletedpath)
@@ -221,16 +212,15 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 			panic(err)
 		}
 
-		postUrl := workspaceUrl + "/" + meta.ComponentId + "/" + remotePath + "?op=delete"
-
-		request, err := http.NewRequest("POST", postUrl, nil)
+		err = Remove(client, ccmBaseUrl, workspaceId, componentId, remotePath)
 		if err != nil {
-			panic(err)
-		}
-
-		_, err = client.Do(request)
-		if err != nil {
-			panic(err)
+			// First, check to see if this is a 404 (Not Found). If the file is already deleted
+			//  then this is an acceptable resolution to the checkin. One reason it may be already
+			//  deleted is that it is a child of a directory that is already deleted.
+			fileerror, ok := err.(*FileError)
+			if !ok || fileerror.StatusCode != 404 {
+				panic(err)
+			}
 		}
 
 		delete(status.metaData.pathMap, remotePath)
@@ -243,9 +233,10 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 	// Force a reload of the jazzhub sandbox to avoid out of sync when
 	//  looking at the changes page
-	projectId := status.metaData.projectId()
+	projectName := status.metaData.projectName
 
-	request, err := http.NewRequest("POST", jazzHubBaseUrl+"/code/jazz/Workspace/"+workspaceObj.ScmInfo.ItemId+"/file/"+status.metaData.userId+"-OrionContent/"+projectId,
+	// TODO All of this is not nearly sufficient, it assumes that the user hit "Edit Code" on the project at least once
+	request, err := http.NewRequest("POST", jazzHubBaseUrl+"/code/jazz/Workspace/"+workspaceId+"/file/"+status.metaData.userId+"-OrionContent/"+projectName,
 		strings.NewReader("{\"Load\": true}"))
 	if err != nil {
 		panic(err)
@@ -266,11 +257,11 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 	}
 
 	fmt.Println("Checkin Complete")
-	fmt.Println("Visit the following URL to deliver your changes to the rest of the team:")
-	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+projectId))
+	fmt.Println("Visit the following URL to work with your changes, deliver them to the rest of the team and more:")
+	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+projectName))
 }
 
-func checkinFile(client *Client, localPath string, sandboxPath string, postUrl string) metaObject {
+func checkinFile(client *Client, localPath string, remoteFile *File) metaObject {
 	file, err := os.Open(localPath)
 	if err != nil {
 		panic(err)
@@ -281,18 +272,9 @@ func checkinFile(client *Client, localPath string, sandboxPath string, postUrl s
 	hash := sha1.New()
 	tee := io.TeeReader(file, hash)
 
-	req, err := http.NewRequest("POST", postUrl, tee)
-	if err != nil {
-		panic(err)
-	}
-
-	fsObject := fetchFSObject(client, req)
-
 	newmeta := metaObject{}
-	newmeta.Path = sandboxPath
-	newmeta.ItemId = fsObject.ScmInfo.ItemId
-	newmeta.StateId = fsObject.ScmInfo.StateId
-	newmeta.ComponentId = fsObject.ScmInfo.ComponentId
+	newmeta.ItemId = remoteFile.info.ScmInfo.ItemId
+	newmeta.ComponentId = remoteFile.info.ScmInfo.ComponentId
 
 	info, err := os.Stat(localPath)
 	if err != nil {
@@ -302,13 +284,21 @@ func checkinFile(client *Client, localPath string, sandboxPath string, postUrl s
 	newmeta.LastModified = info.ModTime().Unix()
 	newmeta.Size = info.Size()
 
-	newmeta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
-
-	file.Close()
-	err = os.Remove(localPath)
+	err = remoteFile.Write(tee)
 	if err != nil {
 		panic(err)
 	}
+	remoteFile.Close()
+	
+	// Write the hash now that the file contents have been read while uploading to the server
+	newmeta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
+
+	// The new stateId is assigned to the remoteFile after a successful write
+	newmeta.StateId = remoteFile.info.ScmInfo.ItemId
+
+	// This is the staged file, we can delete it to save disk space since it was uploaded without error
+	file.Close()
+	os.Remove(localPath)
 
 	return newmeta
 }

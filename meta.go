@@ -4,7 +4,6 @@ import (
 	"encoding/gob"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 const (
@@ -25,11 +24,10 @@ type metaObject struct {
 type metaData struct {
 	pathMap       map[string]metaObject
 	componentEtag map[string]string
-	workspaceName string
 	isstream      bool
 	ccmBaseUrl    string
 	workspaceId   string
-	projectUrl    string
+	projectName   string
 	userId        string
 
 	inited    bool
@@ -52,11 +50,10 @@ func (metadata *metaData) load(path string) error {
 	file, err := os.Open(path)
 	if err == nil {
 		decoder := gob.NewDecoder(file)
-		err = decoder.Decode(&metadata.workspaceName)
 		err = decoder.Decode(&metadata.isstream)
 		err = decoder.Decode(&metadata.ccmBaseUrl)
 		err = decoder.Decode(&metadata.workspaceId)
-		err = decoder.Decode(&metadata.projectUrl)
+		err = decoder.Decode(&metadata.projectName)
 		err = decoder.Decode(&metadata.userId)
 		err = decoder.Decode(&metadata.pathMap)
 		err = decoder.Decode(&metadata.componentEtag)
@@ -74,11 +71,10 @@ func (metadata *metaData) save(path string) error {
 	file, err := os.Create(path)
 	if err == nil {
 		encoder := gob.NewEncoder(file)
-		err = encoder.Encode(&metadata.workspaceName)
 		err = encoder.Encode(&metadata.isstream)
 		err = encoder.Encode(&metadata.ccmBaseUrl)
 		err = encoder.Encode(&metadata.workspaceId)
-		err = encoder.Encode(&metadata.projectUrl)
+		err = encoder.Encode(&metadata.projectName)
 		err = encoder.Encode(&metadata.userId)
 		err = encoder.Encode(&metadata.pathMap)
 		err = encoder.Encode(&metadata.componentEtag)
@@ -156,9 +152,4 @@ func (metadata *metaData) get(path string, sandboxpath string) (metaObject, bool
 	}
 
 	return meta, hit
-}
-
-func (metadata *metaData) projectId() string {
-	projectUrlParts := strings.Split(metadata.projectUrl, "/")
-	return projectUrlParts[len(projectUrlParts)-1]
 }
