@@ -71,7 +71,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 	}
 
 	// TODO Probe the remote workspace to verify that it is in sync
-	//   - Tell the user if they are out of sync
+	//   - Warn the user if they are out of sync
 
 	defaultComponentId := ""
 	for idx, component := range components {
@@ -274,6 +274,7 @@ func checkinFile(client *Client, localPath string, remoteFile *File) metaObject 
 
 	newmeta := metaObject{}
 	newmeta.ItemId = remoteFile.info.ScmInfo.ItemId
+
 	newmeta.ComponentId = remoteFile.info.ScmInfo.ComponentId
 
 	info, err := os.Stat(localPath)
@@ -289,12 +290,12 @@ func checkinFile(client *Client, localPath string, remoteFile *File) metaObject 
 		panic(err)
 	}
 	remoteFile.Close()
-	
+
 	// Write the hash now that the file contents have been read while uploading to the server
 	newmeta.Hash = base64.StdEncoding.EncodeToString(hash.Sum(nil))
 
 	// The new stateId is assigned to the remoteFile after a successful write
-	newmeta.StateId = remoteFile.info.ScmInfo.ItemId
+	newmeta.StateId = remoteFile.info.ScmInfo.StateId
 
 	// This is the staged file, we can delete it to save disk space since it was uploaded without error
 	file.Close()
