@@ -204,7 +204,8 @@ func loadOp() {
 		}
 
 		fmt.Println("Visit the following link to work with your repository workspace:")
-		fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+*userId+"-OrionContent/"+projectName))
+		redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + *userId + "-OrionContent/" + projectName)
+		fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(redirect))
 	}
 }
 

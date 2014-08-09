@@ -63,7 +63,8 @@ func checkinOp() {
 		panic(err)
 	}
 	fmt.Println("Visit the following URL to work with your changes, deliver them to the rest of the team and more:")
-	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+status.metaData.projectName))
+	redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + status.metaData.userId + "-OrionContent/" + status.metaData.projectName)
+	fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(redirect))
 }
 
 func scmCheckin(client *Client, status *status, sandboxPath string) {
