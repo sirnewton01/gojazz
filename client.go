@@ -128,6 +128,12 @@ func (jClient *Client) Do(request *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
+type Project struct {
+	CcmBaseUrl string `json:"ccmBaseUrl"`
+	ItemId     string `json:"itemId"`
+	Name       string `json:"name"`
+}
+
 func (client *Client) findProject(name string) (Project, error) {
 	projectEscaped := url.QueryEscape(name)
 

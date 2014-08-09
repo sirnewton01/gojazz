@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,14 +19,6 @@ const (
 	numGoRoutines = 10
 	bufferSize    = 1000
 )
-
-type ProjectResults struct {
-	Projects []Project `json:"projects"`
-}
-
-type Project struct {
-	CcmBaseUrl string `json:"ccmBaseUrl"`
-}
 
 func loadOp() {
 	var projectName string
@@ -103,25 +96,57 @@ func loadOp() {
 			panic(errors.New("Provide a project to load"))
 		}
 
-		ccmBaseUrl, err = client.findCcmBaseUrl(projectName)
+		project, err := client.findProject(projectName)
 		if err != nil {
 			panic(err)
 		}
+		ccmBaseUrl = project.CcmBaseUrl
 
 		// Find a repository workspace with the correct naming convention
 		// Failing that, create one.
 		if *workspace {
 			isstream = false
 
-			// FIXME this criteria (based on the name) is not good
-			workspaceId, err = FindRepositoryWorkspace(client, ccmBaseUrl, projectName+" Workspace")
+			streamId := ""
+
+			// User has provided a stream that they want to work on
+			if *stream != "" {
+				// TODO someday we will support the ability to work on different streams
+				//	streamId, err = FindStream(client, ccmBaseUrl, projectName, *stream)
+				//	if err != nil {
+				//		panic(err)
+				//	}
+				//	if streamId == "" {
+				//		panic(errors.New("Stream with name " + *stream + " not found"))
+				//	}
+				panic(errors.New("Sorry, we don't yet support loading repository workspaces from a specific stream. You can only use the default for now."))
+			} else {
+				// Otherwise, use a stream that matches the naming convention
+				streamId, err = FindStream(client, ccmBaseUrl, projectName, projectName+" Stream")
+				if err != nil {
+					// TODO perhaps we should prompt the user in this case?
+					panic(err)
+				}
+				if streamId == "" {
+					panic(errors.New("The default stream for the project could not be found. Is it a Git project?"))
+				}
+			}
+
+			workspaceId, err = FindWorkspaceForStream(client, ccmBaseUrl, streamId)
 			if err != nil {
 				panic(err)
 			}
-
-			// FIXME this should create a new repository workspace from the specified stream
 			if workspaceId == "" {
-				panic(errors.New("No repository workspace found\n"))
+				// TODO someday we will be able to create a repository workspace from a stream, for now we use the init project rest call and hope that the workspace is for the stream the user specified
+				//	workspaceId, err = CreateWorkspaceFromStream(client, ccmBaseUrl, projectName, *userId, streamId, projectName+" Stream")
+				//	if err != nil {
+				//		panic(err)
+				//	}
+
+				workspaceId, err = initWebIdeProject(client, project, *userId)
+				if err != nil {
+					panic(err)
+				}
 			}
 		} else {
 			isstream = true
@@ -157,6 +182,7 @@ func loadOp() {
 
 	if isstream {
 		fmt.Printf("Type: Stream\n")
+		fmt.Printf("Note: Loading from a stream will not allow you to contribute changes. You must load again using the '-workspace=true' parameter.\n")
 	} else {
 		fmt.Printf("Type: Repository Workspace\n")
 	}
@@ -164,6 +190,22 @@ func loadOp() {
 	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, *userId, *sandboxPath, status)
 
 	fmt.Printf("Load Successful\n")
+
+	// If we loaded from a repository workspace then init the web IDE project and
+	//  provide a URL for them to manage their changes
+	if !isstream {
+		project, err := client.findProject(projectName)
+		if err != nil {
+			panic(err)
+		}
+		_, err = initWebIdeProject(client, project, *userId)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println("Visit the following link to work with your repository workspace:")
+		fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+*userId+"-OrionContent/"+projectName))
+	}
 }
 
 func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId string, stream bool, userId string, sandbox string, status *status) {

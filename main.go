@@ -25,6 +25,7 @@ func main() {
 		logfile, err := ioutil.TempFile("", "gojazz-log")
 		if err == nil {
 			fmt.Printf("Writing detailed log to %v\n", logfile.Name())
+			logfile.Write([]byte(fmt.Sprintf("ERROR: %v\n", r)))
 			logfile.Write(debug.Stack())
 		}
 	}()

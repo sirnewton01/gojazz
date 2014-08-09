@@ -7,8 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -57,6 +55,15 @@ func checkinOp() {
 	}
 
 	scmCheckin(client, status, *sandboxPath)
+
+	// Force a load/reload of the jazzhub sandbox to avoid out of sync when
+	//  looking at the changes page
+	err = loadWorkspace(client, status.metaData.projectName, status.metaData.workspaceId, status.metaData.userId)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Visit the following URL to work with your changes, deliver them to the rest of the team and more:")
+	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+status.metaData.projectName))
 }
 
 func scmCheckin(client *Client, status *status, sandboxPath string) {
@@ -70,8 +77,11 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		panic(err)
 	}
 
-	// TODO Probe the remote workspace to verify that it is in sync
+	// TODO Probe the remote workspace to verify that it is in sync with this sandbox
 	//   - Warn the user if they are out of sync
+	//   - Tell them that check-in will make a best effort to find the correct places
+	//      to attach the local changes
+	//   - Ask them if they wish to proceed
 
 	defaultComponentId := ""
 	for idx, component := range components {
@@ -231,34 +241,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		panic(err)
 	}
 
-	// Force a reload of the jazzhub sandbox to avoid out of sync when
-	//  looking at the changes page
-	projectName := status.metaData.projectName
-
-	// TODO All of this is not nearly sufficient, it assumes that the user hit "Edit Code" on the project at least once
-	request, err := http.NewRequest("POST", jazzHubBaseUrl+"/code/jazz/Workspace/"+workspaceId+"/file/"+status.metaData.userId+"-OrionContent/"+projectName,
-		strings.NewReader("{\"Load\": true}"))
-	if err != nil {
-		panic(err)
-	}
-	request.Header.Add("Jazz-Version", "2")
-	request.Header.Add("X-Requested-With", "XMLHttpRequest")
-
-	response, err := client.Do(request)
-	if err != nil {
-		panic(err)
-	}
-
-	if response.StatusCode > 300 {
-		fmt.Printf("Response Status: %v\n", response.StatusCode)
-		b, _ := ioutil.ReadAll(response.Body)
-		fmt.Printf("Response Body\n%v\n", string(b))
-		panic("Error")
-	}
-
 	fmt.Println("Checkin Complete")
-	fmt.Println("Visit the following URL to work with your changes, deliver them to the rest of the team and more:")
-	fmt.Println(jazzHubBaseUrl + "/code/jazzui/changes.html#" + url.QueryEscape("/code/jazz/Changes/_/file/"+status.metaData.userId+"-OrionContent/"+projectName))
 }
 
 func checkinFile(client *Client, localPath string, remoteFile *File) metaObject {

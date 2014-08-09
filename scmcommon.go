@@ -12,6 +12,10 @@ import (
 	"sync"
 )
 
+const (
+	numWalkGoroutines = 10
+)
+
 func findSandbox(startingPath string) (p string) {
 	_, err := os.Stat(startingPath)
 	if err != nil {
@@ -72,6 +76,120 @@ func FindRepositoryWorkspace(client *Client, ccmBaseUrl, workspaceName string) (
 	for _, w := range workspaceList.Children {
 		if w.Name == workspaceName {
 			return w.ScmInfo.ItemId, nil
+		}
+	}
+
+	return "", nil
+}
+
+func FindContributorId(client *Client, ccmBaseUrl string) (string, error) {
+	// Fetch all of the user's repository workspaces with the flow targets
+	url := path.Join(ccmBaseUrl, "/service/com.ibm.team.repository.common.internal.IContributorRestService/currentContributor")
+	url = strings.Replace(url, ":/", "://", 1)
+
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Add("Accept", "text/json")
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := ioutil.ReadAll(resp.Body)
+		body := string(b)
+		return "", &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+	}
+
+	contributor := &soapenv{}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", &FileError{Msg: err.Error()}
+	}
+	err = json.Unmarshal(b, contributor)
+	if err != nil {
+		return "", &FileError{Msg: err.Error()}
+	}
+
+	contributorId := contributor.Body.Response.ReturnValue.Value.ItemId
+
+	return contributorId, nil
+}
+
+type soapenv struct {
+	Body soapbody `json:"soapenv:Body"`
+}
+type soapbody struct {
+	Response soapresponse `json:"response"`
+}
+type soapresponse struct {
+	ReturnValue soapreturnvalue `json:"returnValue"`
+}
+type soapreturnvalue struct {
+	Value soapvalue `json:"value"`
+}
+type soapvalue struct {
+	ItemId string     `json:"itemId"`
+	Items  []soapitem `json:"items"`
+}
+type soapitem struct {
+	Workspace soapworkspace `json:"workspace"`
+}
+type soapworkspace struct {
+	Flow   []soapworkspaceflow `json:"flow"`
+	ItemId string              `json:"itemId"`
+}
+type soapworkspaceflow struct {
+	Flags           int           `json:"flags"`
+	TargetWorkspace soapworkspace `json:"targetWorkspace"`
+}
+
+func FindWorkspaceForStream(client *Client, ccmBaseUrl string, streamId string) (string, error) {
+	contributorId, err := FindContributorId(client, ccmBaseUrl)
+	if err != nil {
+		return "", err
+	}
+
+	url := path.Join(ccmBaseUrl, "/service/com.ibm.team.scm.common.internal.rest.IScmRestService/workspaces?ownerItemId="+contributorId)
+	url = strings.Replace(url, ":/", "://", 1)
+
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Add("Accept", "text/json")
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := ioutil.ReadAll(resp.Body)
+		body := string(b)
+		return "", &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+	}
+
+	result := &soapenv{}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", &FileError{Msg: err.Error()}
+	}
+	err = json.Unmarshal(b, result)
+	if err != nil {
+		return "", &FileError{Msg: err.Error()}
+	}
+
+	for _, item := range result.Body.Response.ReturnValue.Value.Items {
+		for _, flow := range item.Workspace.Flow {
+			if flow.Flags&0x1 == 0x1 && flow.TargetWorkspace.ItemId == streamId {
+				return item.Workspace.ItemId, nil
+			}
 		}
 	}
 
@@ -176,6 +294,43 @@ func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]Fi
 
 	return result, nil
 }
+
+//type CreateWorkspaceResult struct {
+//	WorkspaceId string `json:"workspaceId"`
+//}
+//
+//func CreateWorkspaceFromStream(client *Client, ccmBaseUrl string, projectName string, userName string, streamId string, name string) (string, error) {
+//	// TODO it is completely nonsensical that we have to provide the Orion workspace and userName to create a repository workspace
+//	url := path.Join(jazzHubBaseUrl, "/code/jazz/Workspace/_/file/", userName+"-OrionContent", projectName)
+//	url = strings.Replace(url, ":/", "://", 1)
+//
+//	fmt.Printf("URL: %v\n", url)
+//
+//	request, err := http.NewRequest("POST", url, strings.NewReader(`{
+//		"Create": true,
+//		"repoUrl": "`+ccmBaseUrl+`",
+//		"name": "`+name+`",
+//		"description": "Default Workspace",
+//		"streamId": "`+streamId+`"
+//	}`))
+//	if err != nil {
+//		return "", err
+//	}
+//	addOrionHeaders(request)
+//
+//	resp, err := client.Do(request)
+//	if err != nil {
+//		return "", err
+//	}
+//
+//	result := &CreateWorkspaceResult{}
+//	err = waitForOrionResponse(client, resp, result)
+//	if err != nil {
+//		return "", err
+//	}
+//
+//	return result.WorkspaceId, nil
+//}
 
 type File struct {
 	client  *Client
@@ -515,8 +670,6 @@ func Walk(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 	workTracker := make(chan bool)
 	finished := make(chan bool)
 
-	numGoRoutines := 10
-
 	var firstError error = nil
 	errMutex := &sync.Mutex{}
 
@@ -532,7 +685,7 @@ func Walk(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 
 				if work == 0 {
 					// Send everyone (calling goroutine plus all helpers) the signal that they are finished
-					for i := 0; i < numGoRoutines+1; i++ {
+					for i := 0; i < numWalkGoroutines+1; i++ {
 						finished <- true
 					}
 					return
@@ -541,7 +694,7 @@ func Walk(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 		}
 	}()
 
-	for i := 0; i < numGoRoutines; i++ {
+	for i := 0; i < numWalkGoroutines; i++ {
 		go func() {
 			for {
 				select {
