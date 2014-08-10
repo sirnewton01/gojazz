@@ -85,7 +85,7 @@ func (status *status) String() string {
 	}
 
 	if nochanges {
-		result = result + "<No local changes>\n"
+		result = result + "No local changes\n"
 	}
 
 	return result
@@ -141,9 +141,14 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 			return err
 		}
 
-		// Skip the metadata
+		// Skip the metadata, staging and backup directories
 		if path == sandboxPath || filepath.Base(path) == metadataFileName || strings.Contains(path, stageFolder) || strings.Contains(path, backupFolder) {
 			return nil
+		}
+
+		// Skip binary directories
+		if strings.HasSuffix(path, "/bin") {
+			return filepath.SkipDir
 		}
 
 		meta, ok := oldMetaData.get(path, sandboxPath)
@@ -222,16 +227,46 @@ func (status *status) fileAdded(path string, sandboxPath string) {
 		panic(err)
 	}
 
+	s, err := os.Stat(path)
+	if err != nil {
+		panic(err)
+	}
+
+	// Should we ignore this new file?
+	// Check for signs that it isn't source code
+	//  -Really big file (>1MB)
+	//  -Control characters
+	//  -File extension (e.g. .exe, .dll, .so)
+	if !s.IsDir() {
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, ".exe") || strings.HasSuffix(base, ".dll") || strings.HasSuffix(base, ".so") {
+			return
+		}
+
+		if s.Size() > 1024^2 {
+			return
+		}
+
+		origFile, err := os.Open(path)
+		if err != nil {
+			panic(err)
+		}
+		buffer := make([]byte, 1024, 1024)
+		for n, _ := origFile.Read(buffer); n > 0; {
+			for i := 0; i < n; i++ {
+				if buffer[i] < 32 && buffer[i] != '\r' && buffer[i] != 'n' {
+					origFile.Close()
+					return
+				}
+			}
+		}
+		origFile.Close()
+	}
+
 	status.Added[rel] = true
 	copyPath := status.calcCopyPath(path)
 
 	if copyPath != "" {
-		s, err := os.Stat(path)
-
-		if err != nil {
-			panic(err)
-		}
-
 		if s.IsDir() {
 			os.MkdirAll(copyPath, 0700)
 		} else {
