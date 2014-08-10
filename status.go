@@ -237,9 +237,14 @@ func (status *status) fileAdded(path string, sandboxPath string) {
 	//  -Really big file (>1MB)
 	//  -Control characters
 	//  -File extension (e.g. .exe, .dll, .so)
+	//  -Temporary files left by editors (e.g. *~, *.ext.swp)
 	if !s.IsDir() {
 		base := filepath.Base(path)
 		if strings.HasSuffix(base, ".exe") || strings.HasSuffix(base, ".dll") || strings.HasSuffix(base, ".so") {
+			return
+		}
+
+		if strings.HasSuffix(base, "~") || strings.HasSuffix(base, ".ext.swp") {
 			return
 		}
 

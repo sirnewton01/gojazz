@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -363,15 +365,39 @@ func (fe *FileError) Error() string {
 	return fe.Msg
 }
 
+func assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p string) string {
+	ofsUrl, err := url.Parse(ccmBaseUrl)
+	if err != nil {
+		panic(err)
+	}
+
+	ofsUrl.Path = path.Join(ofsUrl.Path, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, p)
+
+	// TODO figure out why this is having a hard time with "+" characters in filenames
+
+	result := ofsUrl.String()
+
+	// Workaround for weird IBM DOS bug with the OrionFilesystem
+	if strings.HasSuffix(result, ".jsp") {
+		result = result + "derp"
+	}
+
+	return result
+}
+
 func Open(client *Client, ccmBaseUrl string, workspaceId string, componentId string, p string) (*File, error) {
 	f := &File{}
 	f.client = client
-	f.url = path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, p)
-	f.url = strings.Replace(f.url, ":/", "://", 1)
+	f.url = assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p)
 
 	request, err := http.NewRequest("GET", f.url, nil)
 	if err != nil {
 		return nil, &FileError{Msg: err.Error()}
+	}
+
+	// Workaround for weird IBM DOS bug with the OrionFilesystem
+	if strings.HasSuffix(f.url, ".jspderp") {
+		request.Header.Add("X-HasUriSuffix", "true")
 	}
 
 	resp, err := client.Do(request)
@@ -385,7 +411,7 @@ func Open(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 		body := string(b)
 		// The service returns 500 instead of 404
 		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-			return nil, &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+			return nil, &FileError{Msg: fmt.Sprintf("Not Found %v \nURL: %v\nBODY: %v\n", p, f.url, string(b)), StatusCode: 404, Body: body}
 		}
 		return nil, &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
 	}
@@ -417,15 +443,12 @@ func Open(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 func Create(client *Client, ccmBaseUrl string, workspaceId string, componentId, p string) (*File, error) {
 	f := &File{}
 	f.client = client
-
-	f.url = path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, p)
-	f.url = strings.Replace(f.url, ":/", "://", 1)
+	f.url = assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p)
 
 	parentPath := path.Dir(p)
 	fileName := path.Base(p)
 
-	createUrl := path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, parentPath) + "?op=createFile&name=" + fileName
-	createUrl = strings.Replace(createUrl, ":/", "://", 1)
+	createUrl := assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, parentPath) + "?op=createFile&name=" + fileName
 
 	request, err := http.NewRequest("POST", createUrl, nil)
 	if err != nil {
@@ -476,15 +499,12 @@ func Create(client *Client, ccmBaseUrl string, workspaceId string, componentId, 
 func Mkdir(client *Client, ccmBaseUrl string, workspaceId string, componentId, p string) (*File, error) {
 	f := &File{}
 	f.client = client
-
-	f.url = path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, p)
-	f.url = strings.Replace(f.url, ":/", "://", 1)
+	f.url = assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p)
 
 	parentPath := path.Dir(p)
 	fileName := path.Base(p)
 
-	createUrl := path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, parentPath) + "?op=createFolder&name=" + fileName
-	createUrl = strings.Replace(createUrl, ":/", "://", 1)
+	createUrl := assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, parentPath) + "?op=createFolder&name=" + url.QueryEscape(fileName)
 
 	request, err := http.NewRequest("POST", createUrl, nil)
 	if err != nil {
@@ -535,12 +555,16 @@ func Mkdir(client *Client, ccmBaseUrl string, workspaceId string, componentId, p
 func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId string, p string) error {
 	f := &File{}
 	f.client = client
-	f.url = path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_", workspaceId, componentId, p) + "?op=delete"
-	f.url = strings.Replace(f.url, ":/", "://", 1)
+	f.url = assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p)
 
 	request, err := http.NewRequest("POST", f.url, nil)
 	if err != nil {
 		return &FileError{Msg: err.Error()}
+	}
+
+	// Workaround for weird IBM DOS bug with the OrionFilesystem
+	if strings.HasSuffix(f.url, ".jspderp") {
+		request.Header.Add("X-HasUriSuffix", "true")
 	}
 
 	resp, err := client.Do(request)
@@ -567,6 +591,11 @@ func (f *File) Read(p []byte) (int, error) {
 		request, err := http.NewRequest("GET", f.url+"?op=readContent", nil)
 		if err != nil {
 			return 0, &FileError{Msg: err.Error()}
+		}
+
+		// Workaround for weird IBM DOS bug with the OrionFilesystem
+		if strings.HasSuffix(f.url, ".jspderp") {
+			request.Header.Add("X-HasUriSuffix", "true")
 		}
 
 		resp, err := f.client.Do(request)
@@ -597,6 +626,11 @@ func (f *File) Write(contents io.Reader) error {
 	request, err := http.NewRequest("POST", f.url+"?op=writeContent", contents)
 	if err != nil {
 		return &FileError{Msg: err.Error()}
+	}
+
+	// Workaround for weird IBM DOS bug with the OrionFilesystem
+	if strings.HasSuffix(f.url, ".jspderp") {
+		request.Header.Add("X-HasUriSuffix", "true")
 	}
 
 	resp, err := f.client.Do(request)

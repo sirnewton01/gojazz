@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/howeyc/gopass"
@@ -304,12 +305,28 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 					worked += 1
 				}
 
-				// Backspace out the last line that was printed
+				// Backspace and space out the last line that was printed
+				for i := 0; i < lastStringLength; i++ {
+					fmt.Printf("\b")
+				}
+				for i := 0; i < lastStringLength; i++ {
+					fmt.Printf(" ")
+				}
 				for i := 0; i < lastStringLength; i++ {
 					fmt.Printf("\b")
 				}
 
-				lastStringLength, _ = fmt.Printf("Loaded %v (of %v) files. Bytes loaded: %v", worked, work, transferred)
+				bytesLoaded := ""
+				// TODO handle Gigabytes?
+				if transferred > (1024 * 1024) {
+					bytesLoaded = strconv.FormatInt(transferred/(1024*1024), 10) + "MB"
+				} else if transferred > 1024 {
+					bytesLoaded = strconv.FormatInt(transferred/1024, 10) + "KB"
+				} else {
+					bytesLoaded = strconv.FormatInt(transferred, 10) + "B"
+				}
+
+				lastStringLength, _ = fmt.Printf("Loaded %v (of %v) files. %v", worked, work, bytesLoaded)
 			case <-trackerFinish:
 				return
 			}
