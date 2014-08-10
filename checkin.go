@@ -58,7 +58,7 @@ func checkinOp() {
 
 	// Force a load/reload of the jazzhub sandbox to avoid out of sync when
 	//  looking at the changes page
-	err = loadWorkspace(client, status.metaData.projectName, status.metaData.workspaceId, status.metaData.userId)
+	err = loadWorkspace(client, status.metaData.projectName, status.metaData.workspaceId)
 	if err != nil {
 		panic(err)
 	}

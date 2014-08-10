@@ -113,8 +113,12 @@ func initWebIdeProject(client *Client, project Project, userName string) (string
 	return result.Workspace.ItemId, nil
 }
 
-func loadWorkspace(client *Client, projectName string, workspaceId string, userName string) error {
-	url := path.Join(jazzHubBaseUrl, "/code/jazz/Workspace/", workspaceId, "file", userName+"-OrionContent", projectName)
+func loadWorkspace(client *Client, projectName string, workspaceId string) error {
+	if client.jazzID == "" {
+		return errors.New("Not logged in")
+	}
+
+	url := path.Join(jazzHubBaseUrl, "/code/jazz/Workspace/", workspaceId, "file", client.jazzID+"-OrionContent", projectName)
 	url = strings.Replace(url, ":/", "://", 1)
 
 	request, err := http.NewRequest("POST", url, strings.NewReader(`{
