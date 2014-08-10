@@ -7,6 +7,11 @@ so that you can work easily with your choice of editors and tools.
 There are a minimal number of CLI commands for you to remember.
 You can use the DevOps Services web site to use the rest of the SCM capabilities.
 
+Gojazz should be suitable for many small to medium sized project. As a lightweight tool it lacks some of the more advanced "enterprise" features
+of the standard Jazz SCM clients. Notable omissions include symbolic links,
+platform-specific conversions of line terminators and the ability to script all of the SCM operations (e.g. accept, deliver). If it is not suitable for your
+project please try one of Jazz SCM client from jazz.net/downloads.
+
 ## Features
 
 +  Load the latest contents of a stream (no authentication required for public projects)
