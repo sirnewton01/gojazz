@@ -1,42 +1,48 @@
 # Go Jazz
 
-GoJazz is a tool for working with Jazz SCM projects on IDS on your local machine.
+GoJazz is a tool for working with Jazz SCM projects on IBM DevOps Servies on your local machine.
 It is designed to be a light-weight alternative to the standard Jazz SCM clients
-that can work easily with a variety of desktop tools.
+so that you can work easily with your choice of editors and tools.
 
-Working with Jazz SCM is accomplished via a minimal number of CLI commands and
- the IDS web interface for the rest of the SCM capabilities.
+There are a minimal number of CLI commands for you to remember.
+You can use the DevOps Services web site to use the rest of the SCM capabilities.
 
 ## Features
 
 +  Load the latest contents of a stream (no authentication required for public projects)
-+  Load the contents of your repository workspace
-+  Check-in your changes (EXPERIMENTAL)
-+  Incremental re-load, downloading only the changed files
++  Load the contents of your personal repository workspace for projects
++  Synchronize your local changes with your repository workspace (EXPERIMENTAL)
++  Incremental load, downloading only the changed files in your stream or repository workspace
 
 ## Examples
 
-Load the default stream for a project. Repeat at any time to get the latest code.
+Load the default stream for a project into a local sandbox. Repeat at any time to get the latest code.
 
 `gojazz load "sirnewton | test"`
 
-Load your repository workspace.
+Load your repository workspace into a local sandbox. Repeat at any time to erase local changes and start over with what is in your repository workspace.
 
-`gojazz load "sirnewton | test" -workspace=true -userId=mkent`
+`gojazz load "sirnewton | test" -workspace=true -userId=mkent@example.com`
 
-Find the modified files in your sandbox.
+Find the modified files in your local sandbox.
 
 `gojazz status`
 
-Check-in your changes to your repository workspace. Repeat whenever you have new changes.
+Synchronize any local changes in your sandbox and changes in your repository workspace on the DevOps Services website.
 
-`gojazz checkin`
+`gojazz sync`
 
-## Updates
+## Repository Workspaces
 
-You can use IDS web interface is used to update your repository workspace.
+You have a repository workspace on IBM DevOps services to manage your
+changes for a project before you share them with the rest of the team.
+It's also a great place to backup your changes in case of disaster.
+
+You can use DevOps Services web site to work with your repository workspaces.
 The most common type of update is to accept changes from the team's stream.
 There are other kinds of updates like discarding change sets or undoing changes.
-Before you update your repository workspace you should check-in (gojazz checkin) your changes
-to back them up. Afterwards, re-load (gojazz load) to update your sandbox.
+Gojazz commands will give you the URL to access your repository workspace.
 
+Run the "sync" command on your sandbox often. It will make sure that your
+changes are backed up and it will make sure that you are up-to-date with
+your repository workspace. 
