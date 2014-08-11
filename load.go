@@ -282,6 +282,28 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 		loadComponent(client, ccmBaseUrl, workspaceId, componentId, sandbox, newMetaData, status)
 	}
 
+	// Do a final pass over the top-level elements in the sandbox
+	//  to remove any that are no longer registered in the metadata.
+	s, err := os.Open(sandbox)
+	if err != nil {
+		panic(err)
+	}
+	roots, err := s.Readdirnames(-1)
+	if err != nil {
+		panic(err)
+	}
+	for _, root := range roots {
+		rootPath := filepath.Join(sandbox, root)
+		_, ok := newMetaData.get(rootPath, sandbox)
+
+		if !ok {
+			err = os.RemoveAll(rootPath)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
 	newMetaData.save(metadataFile)
 }
 
