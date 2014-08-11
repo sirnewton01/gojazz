@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -530,6 +531,55 @@ func Mkdir(client *Client, ccmBaseUrl string, workspaceId string, componentId, p
 	f.etag = etag
 
 	return f, nil
+}
+
+func MkdirAll(client *Client, ccmBaseUrl string, workspaceId string, componentId, p string) (*File, error) {
+	// Walk up the tree to find the first directory that exists
+	p = path.Clean(p)
+	dir := p
+	f, err := Open(client, ccmBaseUrl, workspaceId, componentId, dir)
+
+	for {
+		// We found a file that exists
+		if err == nil || dir == "/" {
+			break
+		}
+
+		if err != nil {
+			jazzError, ok := err.(*JazzError)
+			if !ok {
+				return nil, err
+			}
+
+			if jazzError.StatusCode != 404 {
+				return nil, err
+			}
+		}
+
+		p = path.Dir(p)
+		f, err = Open(client, ccmBaseUrl, workspaceId, componentId, p)
+	}
+
+	if p == dir {
+		return f, nil
+	}
+
+	if !f.info.Directory {
+		return nil, errors.New("Directory or parent directory is actually a file. Cannot MkdirAll for this path.")
+	}
+
+	// We have the last known existing directory, start creating the children underneath
+	childrenToCreate := strings.Split(p[len(dir):], "/")
+	childFile := f
+	for _, child := range childrenToCreate {
+		dir = path.Join(dir, child)
+		childFile, err = Mkdir(client, ccmBaseUrl, workspaceId, componentId, dir)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return childFile, nil
 }
 
 func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId string, p string) error {

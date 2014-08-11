@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -167,7 +168,26 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		if info.IsDir() {
 			remoteFolder, err := Mkdir(client, ccmBaseUrl, workspaceId, componentId, addedpath)
 			if err != nil {
-				panic(err)
+				// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
+				//  parent directories are not there.
+				fileerror, ok := err.(*JazzError)
+
+				if ok && fileerror.StatusCode == 404 {
+					// One last crack at this is to create all of the necessary parent directories and then add the file to it
+					parentDir := path.Dir(addedpath)
+					_, err := MkdirAll(client, ccmBaseUrl, workspaceId, componentId, parentDir)
+					if err != nil {
+						panic(err)
+					}
+
+					// Try again now that the parent directory is there
+					remoteFolder, err = Mkdir(client, ccmBaseUrl, workspaceId, componentId, addedpath)
+					if err != nil {
+						panic(err)
+					}
+				} else {
+					panic(err)
+				}
 			}
 
 			meta := metaObject{}
@@ -182,18 +202,27 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 			if err != nil {
 				// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
 				//  parent directories are not there.
-
 				fileerror, ok := err.(*JazzError)
 
-				// TODO create all of the parent directories when this happens
 				if ok && fileerror.StatusCode == 404 {
-					panic(simpleWarning(fmt.Sprintf("The parent directory of file %v could not be found. Cannot check it in.", addedpath)))
+					// One last crack at this is to create all of the necessary parent directories and then add the file to it
+					parentDir := path.Dir(addedpath)
+					_, err := MkdirAll(client, ccmBaseUrl, workspaceId, componentId, parentDir)
+					if err != nil {
+						panic(err)
+					}
+
+					// Try again now that the parent directory is there
+					remoteFile, err = Create(client, ccmBaseUrl, workspaceId, componentId, addedpath)
+					if err != nil {
+						panic(err)
+					}
 				} else {
 					panic(err)
 				}
 			}
 
-			stagepath := filepath.Join(sandboxPath, ".jazzstage", addedpath)
+			stagepath := filepath.Join(sandboxPath, stageFolder, addedpath)
 			newmeta := checkinFile(client, stagepath, remoteFile)
 			newmeta.Path = localpath
 			status.metaData.simplePut(newmeta, sandboxPath)
