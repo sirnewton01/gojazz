@@ -225,10 +225,6 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 	newMetaData.projectName = projectName
 	newMetaData.workspaceId = workspaceId
 
-	// Delete the old metadata
-	metadataFile := filepath.Join(sandbox, metadataFileName)
-	os.Remove(metadataFile)
-
 	if status != nil {
 		// Delete any files that were added/modified (they should already be backed up)
 		for addedPath, _ := range status.Added {
@@ -270,6 +266,10 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 			}
 		}
 	}
+	
+	// Delete the old metadata
+	metadataFile := filepath.Join(sandbox, metadataFileName)
+	os.Remove(metadataFile)
 
 	// Find all of the components of the remote workspace and then walk over each one
 	componentIds, err := FindComponentIds(client, ccmBaseUrl, workspaceId)
@@ -294,9 +294,9 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 	}
 	for _, root := range roots {
 		rootPath := filepath.Join(sandbox, root)
-
+		rootBase := filepath.Base(rootPath)
 		// Don't delete the backup, staging or metadata files
-		if strings.Contains(rootPath, backupFolder) || strings.Contains(rootPath, stageFolder) || strings.Contains(rootPath, metadataFileName) {
+		if rootBase == backupFolder || rootBase == stageFolder || rootBase == metadataFileName {
 			continue
 		}
 

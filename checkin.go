@@ -104,7 +104,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		fmt.Printf("%v (Modified)\n", modifiedpath)
 
 		localpath := filepath.Join(sandboxPath, modifiedpath)
-		stagepath := filepath.Join(sandboxPath, ".jazzstage", modifiedpath)
+		stagepath := filepath.Join(sandboxPath, stageFolder, modifiedpath)
 
 		meta, ok := status.metaData.get(localpath, sandboxPath)
 		componentId := ""
