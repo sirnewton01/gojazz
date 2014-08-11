@@ -9,7 +9,13 @@ import (
 	"github.com/howeyc/gopass"
 )
 
+func syncDefaults() {
+	fmt.Errorf("gojazz sync [options]\n")
+	flag.PrintDefaults()
+}
+
 func syncOp() {
+	flag.Usage = syncDefaults
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to sync the files")
 	flag.Parse()
 
@@ -25,13 +31,11 @@ func syncOp() {
 
 	status, err := scmStatus(*sandboxPath, STAGE)
 	if err != nil {
-		fmt.Printf("%v\n", err.Error())
-		return
+		panic(err)
 	}
 
 	if status.metaData.isstream {
-		fmt.Printf("Sync is for repository workspaces, use load instead to incrementally update your loaded stream.\n")
-		return
+		panic(simpleWarning("Sync is for repository workspaces, use load instead to incrementally update your loaded stream."))
 	}
 
 	fmt.Printf("Password: ")
@@ -52,6 +56,6 @@ func syncOp() {
 		panic(err)
 	}
 	fmt.Println("Visit the following URL to work with your changes, deliver them to the rest of the team and more:")
-	redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + status.metaData.userId + "-OrionContent/" + status.metaData.projectName)
+	redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + client.GetJazzId() + "-OrionContent/" + status.metaData.projectName)
 	fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(redirect))
 }

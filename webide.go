@@ -31,8 +31,8 @@ func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) er
 		resp.Body.Close()
 		return err
 	} else if resp.StatusCode != 202 {
-		resp.Body.Close()
-		return errors.New("Bad response from server: " + resp.Status)
+		defer resp.Body.Close()
+		return errorFromResponse(resp)
 	}
 
 	taskLocation := resp.Header.Get("Location")
@@ -54,8 +54,8 @@ func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) er
 			return err
 		}
 		if resp.StatusCode != 200 {
-			resp.Body.Close()
-			return errors.New("Bad response from server: " + resp.Status)
+			defer resp.Body.Close()
+			return errorFromResponse(resp)
 		}
 
 		b, _ := ioutil.ReadAll(resp.Body)
@@ -114,11 +114,11 @@ func initWebIdeProject(client *Client, project Project, userName string) (string
 }
 
 func loadWorkspace(client *Client, projectName string, workspaceId string) error {
-	if client.jazzID == "" {
+	if client.GetJazzId() == "" {
 		return errors.New("Not logged in")
 	}
 
-	url := path.Join(jazzHubBaseUrl, "/code/jazz/Workspace/", workspaceId, "file", client.jazzID+"-OrionContent", projectName)
+	url := path.Join(jazzHubBaseUrl, "/code/jazz/Workspace/", workspaceId, "file", client.GetJazzId()+"-OrionContent", projectName)
 	url = strings.Replace(url, ":/", "://", 1)
 
 	request, err := http.NewRequest("POST", url, strings.NewReader(`{

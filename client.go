@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -28,7 +26,7 @@ type Client struct {
 	password   string
 
 	jazzIDmutex sync.Mutex
-	jazzID      string
+	jazzID2     string
 
 	Log *log.Logger
 }
@@ -62,6 +60,20 @@ func NewClient(userID string, password string) (*Client, error) {
 	jClient.Log = log.New(ioutil.Discard, "", log.LstdFlags)
 
 	return jClient, nil
+}
+
+func (jClient *Client) GetJazzId() string {
+	jClient.jazzIDmutex.Lock()
+	defer jClient.jazzIDmutex.Unlock()
+
+	return jClient.jazzID2
+}
+
+func (jClient *Client) SetJazzId(id string) {
+	jClient.jazzIDmutex.Lock()
+	defer jClient.jazzIDmutex.Unlock()
+
+	jClient.jazzID2 = id
 }
 
 // Perform an http requests with this client
@@ -159,8 +171,8 @@ func (jClient *Client) Do(request *http.Request) (*http.Response, error) {
 			}
 
 			// The credentials did not work, abort with an error
-			if resp.StatusCode == 401 {
-				return nil, errors.New("Invalid credentials")
+			if resp.StatusCode != 200 {
+				return nil, errorFromResponse(resp)
 			}
 
 			b, _ = ioutil.ReadAll(resp.Body)
@@ -200,6 +212,10 @@ func (jClient *Client) Do(request *http.Request) (*http.Response, error) {
 				return nil, err
 			}
 
+			if resp.StatusCode != 200 {
+				return nil, errorFromResponse(resp)
+			}
+
 			b, _ = ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
 
@@ -212,16 +228,19 @@ func (jClient *Client) Do(request *http.Request) (*http.Response, error) {
 				return nil, err
 			}
 
-			jClient.jazzIDmutex.Lock()
-			jClient.jazzID = identResult.UserId
-			jClient.jazzIDmutex.Unlock()
+			jClient.SetJazzId(identResult.UserId)
+		} else {
+			panic(errorFromResponse(resp))
 		}
 
+		// If the initial request was a POST or PUT then send the special
+		//  signal that the caller should repeat their request now that they
+		//  are authenticated.
 		if request.Body != nil {
 			return nil, nil
 		}
 	} else {
-		return nil, errors.New("Guest access was not granted")
+		return nil, &JazzError{Msg: "Guest access was not granted"}
 	}
 
 	jClient.Log.Println("Retrying request")
@@ -254,10 +273,7 @@ func (client *Client) findProject(name string) (Project, error) {
 		return Project{}, err
 	}
 	if resp.StatusCode != 200 {
-		fmt.Printf("Response Status: %v\n", resp.StatusCode)
-		b, _ := ioutil.ReadAll(resp.Body)
-		fmt.Printf("Response Body\n%v\n", string(b))
-		return Project{}, errors.New("Bad response from server")
+		return Project{}, errorFromResponse(resp)
 	}
 	result := &Project{}
 	b, err := ioutil.ReadAll(resp.Body)

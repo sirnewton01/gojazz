@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/base64"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +21,11 @@ const (
 	BACKUP
 	NO_COPY
 )
+
+func statusDefaults() {
+	fmt.Errorf("gojazz status [options]\n")
+	flag.PrintDefaults()
+}
 
 type status struct {
 	Added    map[string]bool
@@ -93,6 +97,7 @@ func (status *status) String() string {
 
 func statusOp() {
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
+	flag.Usage = statusDefaults
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -107,11 +112,12 @@ func statusOp() {
 
 	fmt.Printf("Status of %v...\n", *sandboxPath)
 	status, err := scmStatus(*sandboxPath, NO_COPY)
-	if err == nil {
-		fmt.Printf("%v", status)
-	} else {
-		fmt.Printf("%v\n", err.Error())
+
+	if err != nil {
+		panic(err)
 	}
+
+	fmt.Printf("%v", status)
 }
 
 func scmStatus(sandboxPath string, m mode) (*status, error) {
@@ -121,7 +127,7 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 	err := oldMetaData.load(filepath.Join(sandboxPath, metadataFileName))
 
 	if err != nil {
-		return nil, errors.New("Not a sandbox")
+		return nil, simpleWarning("Not a sandbox")
 	}
 
 	status := newStatus(sandboxPath, m)
@@ -215,7 +221,7 @@ func (status *status) calcCopyPath(path string) string {
 	relpath, err := filepath.Rel(status.sandboxPath, path)
 
 	if err != nil {
-		panic("Error calculating staging path")
+		panic(err)
 	}
 
 	return filepath.Join(status.copyPath, relpath)

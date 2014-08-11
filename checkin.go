@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/base64"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,8 +15,14 @@ import (
 	"github.com/howeyc/gopass"
 )
 
+func checkinDefaults() {
+	fmt.Errorf("gojazz checkin [options]\n")
+	flag.PrintDefaults()
+}
+
 func checkinOp() {
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
+	flag.Usage = checkinDefaults
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -32,17 +37,16 @@ func checkinOp() {
 
 	status, err := scmStatus(*sandboxPath, STAGE)
 	if err != nil {
-		fmt.Printf("%v\n", err.Error())
-		return
+		panic(err)
 	}
 
 	if status.metaData.isstream {
-		fmt.Printf("The sandbox is loaded from a stream, which doesn't support check-ins. Load again using a repository workspace.\n")
+		panic(simpleWarning("The sandbox is loaded from a stream, which doesn't support check-ins. Load again using a repository workspace."))
 		return
 	}
 
 	if status.unchanged() {
-		fmt.Printf("Sandbox is unchanged, nothing checked in.\n")
+		panic(simpleWarning("Sandbox is unchanged. Nothing was checked in."))
 		return
 	}
 
@@ -63,7 +67,7 @@ func checkinOp() {
 		panic(err)
 	}
 	fmt.Println("Visit the following URL to work with your changes, deliver them to the rest of the team and more:")
-	redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + status.metaData.userId + "-OrionContent/" + status.metaData.projectName)
+	redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + client.GetJazzId() + "-OrionContent/" + status.metaData.projectName)
 	fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(redirect))
 }
 
@@ -92,7 +96,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		}
 	}
 	if defaultComponentId == "" {
-		panic(errors.New("There are no components in the repository workspace"))
+		panic(simpleWarning("There are no components in your repository workspace."))
 	}
 
 	for modifiedpath, _ := range status.Modified {
@@ -104,7 +108,8 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		meta, ok := status.metaData.get(localpath, sandboxPath)
 		componentId := ""
 		if !ok {
-			panic("Metadata not found for file")
+			// This shouldn't happen. Log the stack if it does.
+			panic(&JazzError{Msg: "Metadata not found for file that was found in the metadata", Log: true})
 		} else {
 			componentId = meta.ComponentId
 		}
@@ -116,11 +121,11 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 		// TODO better checking and matching for the file, perhaps by item ID?
 		if remoteFile.info.Directory {
-			panic(fmt.Sprintf("Cannot check-in file at path %v. There is a folder at this location on the remote.", modifiedpath))
+			panic(simpleWarning(fmt.Sprintf("Cannot check-in file at path %v. There is a folder at this location on the remote.", modifiedpath)))
 		}
 		// Ooops, this is the wrong file
 		if remoteFile.info.ScmInfo.ItemId != meta.ItemId {
-			panic(fmt.Sprintf("Cannot check-in file at path %v. It is not the same as the one that was originally loaded", modifiedpath))
+			panic(simpleWarning(fmt.Sprintf("Cannot check-in file at path %v. It is not the same as the one that was originally loaded", modifiedpath)))
 		}
 
 		newmeta := checkinFile(client, stagepath, remoteFile)
@@ -178,11 +183,11 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 				// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
 				//  parent directories are not there.
 
-				fileerror, ok := err.(*FileError)
+				fileerror, ok := err.(*JazzError)
 
 				// TODO create all of the parent directories when this happens
 				if ok && fileerror.StatusCode == 404 {
-					panic(errors.New(fmt.Sprintf("The parent directory of file %v could not be found. Cannot check it in.", addedpath)))
+					panic(simpleWarning(fmt.Sprintf("The parent directory of file %v could not be found. Cannot check it in.", addedpath)))
 				} else {
 					panic(err)
 				}
@@ -213,7 +218,8 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 		meta, ok := status.metaData.get(deletedpath, sandboxPath)
 		if !ok {
-			panic("Metadata not found for deleted item")
+			// This should never really happen but log it if it does.
+			panic(&JazzError{Msg: "Metadata not found for deleted item discovered in the metadata.", Log: true})
 		} else {
 			componentId = meta.ComponentId
 		}
@@ -228,7 +234,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 			// First, check to see if this is a 404 (Not Found). If the file is already deleted
 			//  then this is an acceptable resolution to the checkin. One reason it may be already
 			//  deleted is that it is a child of a directory that is already deleted.
-			fileerror, ok := err.(*FileError)
+			fileerror, ok := err.(*JazzError)
 			if !ok || fileerror.StatusCode != 404 {
 				panic(err)
 			}

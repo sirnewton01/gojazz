@@ -57,9 +57,7 @@ func FindRepositoryWorkspace(client *Client, ccmBaseUrl, workspaceName string) (
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		body := string(b)
-		return "", &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return "", errorFromResponse(resp)
 	}
 
 	// The filesystem service renders the list of workspaces as a directory.
@@ -67,11 +65,11 @@ func FindRepositoryWorkspace(client *Client, ccmBaseUrl, workspaceName string) (
 	workspaceList := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 	err = json.Unmarshal(b, workspaceList)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 
 	// Return the first workspace that matches the name
@@ -102,19 +100,17 @@ func FindContributorId(client *Client, ccmBaseUrl string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		body := string(b)
-		return "", &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return "", errorFromResponse(resp)
 	}
 
 	contributor := &soapenv{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 	err = json.Unmarshal(b, contributor)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 
 	contributorId := contributor.Body.Response.ReturnValue.Value.ItemId
@@ -172,19 +168,17 @@ func FindWorkspaceForStream(client *Client, ccmBaseUrl string, streamId string) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		body := string(b)
-		return "", &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return "", errorFromResponse(resp)
 	}
 
 	result := &soapenv{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 	err = json.Unmarshal(b, result)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 
 	for _, item := range result.Body.Response.ReturnValue.Value.Items {
@@ -216,9 +210,7 @@ func FindStream(client *Client, ccmBaseUrl, projectName, streamName string) (str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		body := string(b)
-		return "", &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return "", errorFromResponse(resp)
 	}
 
 	// The filesystem service renders the list of streams as a directory.
@@ -226,11 +218,11 @@ func FindStream(client *Client, ccmBaseUrl, projectName, streamName string) (str
 	streamList := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 	err = json.Unmarshal(b, streamList)
 	if err != nil {
-		return "", &FileError{Msg: err.Error()}
+		return "", err
 	}
 
 	// Return the first stream that matches the name
@@ -275,9 +267,7 @@ func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]Fi
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		body := string(b)
-		return result, &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return result, errorFromResponse(resp)
 	}
 
 	// The filesystem service renders the workspace as a directory.
@@ -285,11 +275,11 @@ func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]Fi
 	workspace := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return result, &FileError{Msg: err.Error()}
+		return result, err
 	}
 	err = json.Unmarshal(b, workspace)
 	if err != nil {
-		return result, &FileError{Msg: err.Error()}
+		return result, err
 	}
 
 	result = workspace.Children
@@ -355,16 +345,6 @@ type ScmInfo struct {
 	StateId     string
 }
 
-type FileError struct {
-	Msg        string
-	StatusCode int
-	Body       string
-}
-
-func (fe *FileError) Error() string {
-	return fe.Msg
-}
-
 func assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p string) string {
 	ofsUrl, err := url.Parse(ccmBaseUrl)
 	if err != nil {
@@ -392,7 +372,7 @@ func Open(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 
 	request, err := http.NewRequest("GET", f.url, nil)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	// Workaround for weird IBM DOS bug with the OrionFilesystem
@@ -402,7 +382,7 @@ func Open(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 
 	resp, err := client.Do(request)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -411,18 +391,18 @@ func Open(client *Client, ccmBaseUrl string, workspaceId string, componentId str
 		body := string(b)
 		// The service returns 500 instead of 404
 		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-			return nil, &FileError{Msg: fmt.Sprintf("Not Found %v \nURL: %v\nBODY: %v\n", p, f.url, string(b)), StatusCode: 404, Body: body}
+			return nil, &JazzError{Msg: fmt.Sprintf("Not Found: %v", p), StatusCode: 404}
 		}
-		return nil, &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return nil, errorFromResponse(resp)
 	}
 	info := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 	err = json.Unmarshal(b, info)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	f.info = *info
@@ -452,12 +432,12 @@ func Create(client *Client, ccmBaseUrl string, workspaceId string, componentId, 
 
 	request, err := http.NewRequest("POST", createUrl, nil)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	resp, err := client.Do(request)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -467,18 +447,18 @@ func Create(client *Client, ccmBaseUrl string, workspaceId string, componentId, 
 		body := string(b)
 		// The service returns 500 instead of 404
 		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-			return nil, &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+			return nil, &JazzError{Msg: fmt.Sprintf("Not Found: %v", p), StatusCode: 404}
 		}
-		return nil, &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return nil, errorFromResponse(resp)
 	}
 	info := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 	err = json.Unmarshal(b, info)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	f.info = *info
@@ -508,12 +488,12 @@ func Mkdir(client *Client, ccmBaseUrl string, workspaceId string, componentId, p
 
 	request, err := http.NewRequest("POST", createUrl, nil)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	resp, err := client.Do(request)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -523,18 +503,18 @@ func Mkdir(client *Client, ccmBaseUrl string, workspaceId string, componentId, p
 		body := string(b)
 		// The service returns 500 instead of 404
 		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-			return nil, &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+			return nil, &JazzError{Msg: fmt.Sprintf("Not Found: %v", p), StatusCode: 404}
 		}
-		return nil, &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return nil, errorFromResponse(resp)
 	}
 	info := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 	err = json.Unmarshal(b, info)
 	if err != nil {
-		return nil, &FileError{Msg: err.Error()}
+		return nil, err
 	}
 
 	f.info = *info
@@ -559,7 +539,7 @@ func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId s
 
 	request, err := http.NewRequest("POST", f.url, nil)
 	if err != nil {
-		return &FileError{Msg: err.Error()}
+		return err
 	}
 
 	// Workaround for weird IBM DOS bug with the OrionFilesystem
@@ -569,7 +549,7 @@ func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId s
 
 	resp, err := client.Do(request)
 	if err != nil {
-		return &FileError{Msg: err.Error()}
+		return err
 	}
 	defer resp.Body.Close()
 
@@ -578,9 +558,9 @@ func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId s
 		body := string(b)
 		// The service returns 500 instead of 404
 		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-			return &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+			return &JazzError{Msg: fmt.Sprintf("Not Found: %v", p), StatusCode: 404}
 		}
-		return &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return errorFromResponse(resp)
 	}
 
 	return nil
@@ -590,7 +570,7 @@ func (f *File) Read(p []byte) (int, error) {
 	if f.reading == nil {
 		request, err := http.NewRequest("GET", f.url+"?op=readContent", nil)
 		if err != nil {
-			return 0, &FileError{Msg: err.Error()}
+			return 0, err
 		}
 
 		// Workaround for weird IBM DOS bug with the OrionFilesystem
@@ -600,7 +580,7 @@ func (f *File) Read(p []byte) (int, error) {
 
 		resp, err := f.client.Do(request)
 		if err != nil {
-			return 0, &FileError{Msg: err.Error()}
+			return 0, err
 		}
 
 		if resp.StatusCode != 200 {
@@ -611,9 +591,9 @@ func (f *File) Read(p []byte) (int, error) {
 
 			// The service returns 500 instead of 404
 			if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-				return 0, &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+				return 0, &JazzError{Msg: fmt.Sprintf("Not Found: %v", f.url), StatusCode: 404}
 			}
-			return 0, &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+			return 0, errorFromResponse(resp)
 		}
 
 		f.reading = resp.Body
@@ -625,7 +605,7 @@ func (f *File) Read(p []byte) (int, error) {
 func (f *File) Write(contents io.Reader) error {
 	request, err := http.NewRequest("POST", f.url+"?op=writeContent", contents)
 	if err != nil {
-		return &FileError{Msg: err.Error()}
+		return err
 	}
 
 	// Workaround for weird IBM DOS bug with the OrionFilesystem
@@ -635,7 +615,7 @@ func (f *File) Write(contents io.Reader) error {
 
 	resp, err := f.client.Do(request)
 	if err != nil {
-		return &FileError{Msg: err.Error()}
+		return err
 	}
 	defer resp.Body.Close()
 
@@ -644,19 +624,19 @@ func (f *File) Write(contents io.Reader) error {
 		body := string(b)
 		// The service returns 500 instead of 404
 		if resp.StatusCode == 500 && strings.Contains(body, "Failed to resolve path:") {
-			return &FileError{Msg: "Not Found", StatusCode: 404, Body: body}
+			return &JazzError{Msg: fmt.Sprintf("Not Found: %v", f.url), StatusCode: 404}
 		}
-		return &FileError{Msg: resp.Status, StatusCode: resp.StatusCode, Body: body}
+		return errorFromResponse(resp)
 	}
 
 	info := &FileInfo{}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return &FileError{Msg: err.Error()}
+		return err
 	}
 	err = json.Unmarshal(b, info)
 	if err != nil {
-		return &FileError{Msg: err.Error()}
+		return err
 	}
 
 	f.info = *info
@@ -805,7 +785,7 @@ func internalWalk(data walkData) error {
 	}
 
 	if f.etag != data.startingEtag {
-		return &FileError{Msg: "Configuration has changed in the middle of walking the tree"}
+		return &JazzError{Msg: "Configuration has changed in the middle of walking the remote file tree"}
 	}
 
 	err = data.wf(data.path, *f)

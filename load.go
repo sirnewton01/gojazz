@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"encoding/base64"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +20,11 @@ const (
 	numGoRoutines = 10
 	bufferSize    = 1000
 )
+
+func loadDefaults() {
+	fmt.Errorf("gojazz load [<project name> [options]]\n")
+	flag.PrintDefaults()
+}
 
 func loadOp() {
 	var projectName string
@@ -41,6 +46,7 @@ func loadOp() {
 
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
+	flag.Usage = loadDefaults
 	flag.Parse()
 
 	if *sandboxPath == "" {
@@ -56,7 +62,8 @@ func loadOp() {
 	password := ""
 
 	if *workspace && *userId == "" {
-		fmt.Printf("You must provide credentials to use a repository workspace\n")
+		fmt.Println(os.Stderr, "You must provide credentials to use a repository workspace.")
+		loadDefaults()
 		return
 	}
 
@@ -66,7 +73,7 @@ func loadOp() {
 
 	if status != nil && !status.unchanged() {
 		fmt.Printf("Here was the status of your sandbox before loading:\n%v", status)
-		fmt.Printf("Your changes have been backed up: %v\n", status.copyPath)
+		fmt.Printf("Your changes have been backed up to this location: %v\n", status.copyPath)
 	}
 
 	// Re-use the existing user ID from the metadata, if available
@@ -94,7 +101,9 @@ func loadOp() {
 	// This is either a fresh sandbox or project/stream/workspace information was provided
 	if status == nil || projectName != "" {
 		if projectName == "" {
-			panic(errors.New("Provide a project to load"))
+			fmt.Println(os.Stderr, "Provide a project to load and try again.")
+			loadDefaults()
+			return
 		}
 
 		project, err := client.findProject(projectName)
@@ -120,7 +129,7 @@ func loadOp() {
 				//	if streamId == "" {
 				//		panic(errors.New("Stream with name " + *stream + " not found"))
 				//	}
-				panic(errors.New("Sorry, we don't yet support loading repository workspaces from a specific stream. You can only use the default for now."))
+				panic(simpleWarning("Sorry, we don't yet support loading repository workspaces from a specific stream. You can only use the default for now."))
 			} else {
 				// Otherwise, use a stream that matches the naming convention
 				streamId, err = FindStream(client, ccmBaseUrl, projectName, projectName+" Stream")
@@ -129,7 +138,7 @@ func loadOp() {
 					panic(err)
 				}
 				if streamId == "" {
-					panic(errors.New("The default stream for the project could not be found. Is it a Git project?"))
+					panic(simpleWarning("The default stream for the project could not be found. Is it a Git project?"))
 				}
 			}
 
@@ -160,7 +169,7 @@ func loadOp() {
 				}
 
 				if workspaceId == "" {
-					panic(errors.New("Stream with name " + *stream + " not found"))
+					panic(simpleWarning("Stream with name " + *stream + " not found"))
 				}
 			} else {
 				// Use the stream with the form "user | projectName Stream"
@@ -170,7 +179,7 @@ func loadOp() {
 				}
 
 				if workspaceId == "" {
-					panic(errors.New("No default stream could be found for this project. Is it a Git project?"))
+					panic(simpleWarning("No default stream could be found for this project. Is it a Git project?"))
 				}
 			}
 		}
@@ -182,10 +191,7 @@ func loadOp() {
 	}
 
 	if isstream {
-		fmt.Printf("Type: Stream\n")
-		fmt.Printf("Note: Loading from a stream will not allow you to contribute changes. You must load again using the '-workspace=true' parameter.\n")
-	} else {
-		fmt.Printf("Type: Repository Workspace\n")
+		fmt.Printf("Note: Loading from a stream will not allow you to contribute changes. You must load again using the '-workspace=true' option.\n")
 	}
 
 	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, *userId, *sandboxPath, status)
@@ -205,7 +211,7 @@ func loadOp() {
 		}
 
 		fmt.Println("Visit the following link to work with your repository workspace:")
-		redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + *userId + "-OrionContent/" + projectName)
+		redirect := fmt.Sprintf(jazzHubBaseUrl + "/code/jazzui/changes.html#" + "/code/jazz/Changes/_/file/" + client.GetJazzId() + "-OrionContent/" + projectName)
 		fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(redirect))
 	}
 }
@@ -253,7 +259,14 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 			}
 
 			if len(children) > 0 {
-				panic(errors.New("Sorry, there are files in the sandbox directory that will be clobbered."))
+				fmt.Println("There are files in the sandbox directory that will be replaced with the remote files.")
+				fmt.Print("Do you want to proceed? [Y/n]:")
+				reader := bufio.NewReader(os.Stdin)
+				answer, _ := reader.ReadString('\n')
+
+				if strings.ToLower(answer) == "n" {
+					panic(simpleWarning("Operation Canceled"))
+				}
 			}
 		}
 	}
