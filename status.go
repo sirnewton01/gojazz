@@ -23,7 +23,7 @@ const (
 )
 
 func statusDefaults() {
-	fmt.Errorf("gojazz status [options]\n")
+	fmt.Printf("gojazz status [options]\n")
 	flag.PrintDefaults()
 }
 

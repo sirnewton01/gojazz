@@ -16,7 +16,7 @@ import (
 )
 
 func checkinDefaults() {
-	fmt.Errorf("gojazz checkin [options]\n")
+	fmt.Printf("gojazz checkin [options]\n")
 	flag.PrintDefaults()
 }
 

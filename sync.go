@@ -10,13 +10,13 @@ import (
 )
 
 func syncDefaults() {
-	fmt.Errorf("gojazz sync [options]\n")
+	fmt.Printf("gojazz sync [options]\n")
 	flag.PrintDefaults()
 }
 
 func syncOp() {
-	flag.Usage = syncDefaults
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to sync the files")
+	flag.Usage = syncDefaults
 	flag.Parse()
 
 	if *sandboxPath == "" {

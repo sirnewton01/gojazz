@@ -22,7 +22,7 @@ const (
 )
 
 func loadDefaults() {
-	fmt.Errorf("gojazz load [<project name> [options]]\n")
+	fmt.Printf("gojazz load [<project name> [options]]\n")
 	flag.PrintDefaults()
 }
 
@@ -62,7 +62,7 @@ func loadOp() {
 	password := ""
 
 	if *workspace && *userId == "" {
-		fmt.Println(os.Stderr, "You must provide credentials to use a repository workspace.")
+		fmt.Println("You must provide credentials to use a repository workspace.")
 		loadDefaults()
 		return
 	}
@@ -101,7 +101,7 @@ func loadOp() {
 	// This is either a fresh sandbox or project/stream/workspace information was provided
 	if status == nil || projectName != "" {
 		if projectName == "" {
-			fmt.Println(os.Stderr, "Provide a project to load and try again.")
+			fmt.Println("Provide a project to load and try again.")
 			loadDefaults()
 			return
 		}
