@@ -294,6 +294,12 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 	}
 	for _, root := range roots {
 		rootPath := filepath.Join(sandbox, root)
+
+		// Don't delete the backup, staging or metadata files
+		if strings.Contains(rootPath, backupFolder) || strings.Contains(rootPath, stageFolder) || strings.Contains(rootPath, metadataFileName) {
+			continue
+		}
+
 		_, ok := newMetaData.get(rootPath, sandbox)
 
 		if !ok {
