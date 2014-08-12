@@ -51,3 +51,8 @@ Gojazz commands will give you the URL to access your repository workspace.
 Run the "sync" command on your sandbox often. It will make sure that your
 changes are backed up and it will make sure that you are up-to-date with
 your repository workspace. 
+
+## Supported Platforms
+
+Linux, Mac OS
+
