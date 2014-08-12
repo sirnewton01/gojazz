@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -22,8 +21,7 @@ func TestBasicStreamLoad(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	loadOp()
 
-	// Verify that certain specific files show up
-
+	// Verify that specific files show up
 	filesToCheck := []string{
 		"README.md", "project.json", "bigFile.txt", ".jazzignore",
 		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped", "bin",
@@ -91,52 +89,48 @@ func TestLoadAndClobberChanges(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	loadOp()
 
-	numFileModifiedAdded := 0
-
 	// Make adds and mods to the files
-	err = filepath.Walk(sandbox1, func(path string, fi os.FileInfo, err error) error {
-		if strings.Contains(path, "deleteMe") || strings.Contains(path, "jazz") {
-			return nil
+	filesToModify := []string{
+		"README.md", "project.json", "bigFile.txt", ".jazzignore",
+		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped",
+		"filename(with)[chars$]^that.must-be-escaped/test.java",
+		"folder/file1.txt", "folder/file2.jsp", "folder/file3.jar",
+		"folder/filename(with)[chars$]^that.must-be-escaped",
+	}
+	for _, file := range filesToModify {
+		path := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(path)
+		if s == nil {
+			t.Error("File not found in sandbox: %v", path)
 		}
 
-		if fi.IsDir() {
+		if s.IsDir() {
 			deleteMe, err := os.Create(filepath.Join(path, "deleteMe.txt"))
 			if err != nil {
-				return err
+				panic(err)
 			}
 			defer deleteMe.Close()
 			_, err = deleteMe.Write([]byte("test contents"))
 			if err != nil {
-				return err
+				panic(err)
 			}
-
-			numFileModifiedAdded += 1
 
 			err = os.Mkdir(filepath.Join(path, "deleteMe"), 0700)
 			if err != nil {
-				return err
+				panic(err)
 			}
-
-			numFileModifiedAdded += 1
-		} else if !strings.Contains(path, "deleteMe") {
-			modFile, err := os.Open(path)
+		} else {
+			modFile, err := os.OpenFile(path, os.O_WRONLY, 0)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			defer modFile.Close()
 
-			_, err = modFile.Write([]byte("new contents"))
+			_, err = modFile.Write([]byte("new contents123"))
 			if err != nil {
-				return err
+				panic(err)
 			}
-
-			numFileModifiedAdded += 1
 		}
-		return nil
-	})
-
-	if err != nil {
-		t.Fatalf("%v", err.Error())
 	}
 
 	os.Args = []string{"load", "-sandbox=" + sandbox1}
@@ -152,18 +146,143 @@ func TestLoadAndClobberChanges(t *testing.T) {
 	}
 
 	// Check that all of the files and folders made their way into the backup
-	numFileBackedUp := 0
-	err = filepath.Walk(filepath.Join(sandbox1, backupFolder), func(path string, fi os.FileInfo, err error) error {
-		if filepath.Base(path) == backupFolder {
-			return nil
+	for _, file := range filesToModify {
+		path := filepath.Join(sandbox1, backupFolder, file)
+		s, _ := os.Stat(path)
+		if s == nil {
+			t.Fatalf("File not found in backup: %v", path)
 		}
 
-		numFileBackedUp += 1
+		if s.IsDir() {
+			s, _ := os.Stat(filepath.Join(path, "deleteMe"))
+			if s == nil {
+				t.Error("File not found in backup: %v", filepath.Join(path, "deleteMe"))
+			}
 
-		return nil
-	})
+			s, _ = os.Stat(filepath.Join(path, "deleteMe.txt"))
+			if s == nil {
+				t.Error("File not found in backup: %v", filepath.Join(path, "deleteMe.txt"))
+			}
+		}
+	}
+}
 
-	if numFileBackedUp != numFileModifiedAdded {
-		t.Errorf("Expected %v files in the backup and there were %v\n", numFileModifiedAdded, numFileBackedUp)
+func TestAlternateStreamLoad(t *testing.T) {
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", "sirnewton | gojazz-test", "-stream=Alternate Stream", "-sandbox=" + sandbox1}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	// Verify that specific files show up
+	filesToCheck := []string{
+		"README.md", "project.json", "bigFile.txt", ".jazzignore",
+		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped", "bin",
+		"bin/mybinary.so", "filename(with)[chars$]^that.must-be-escaped/test.java",
+		"folder/file.exe", "folder/file2.jsp", "folder/file3.jar",
+		"folder/filename(with)[chars$]^that.must-be-escaped",
+		"alternateFile.txt", "alternateFolder", "alternateFolder/anotherAlternateFolder",
+		"alternateFolder/anotherAlternateFile.txt",
+	}
+	for _, file := range filesToCheck {
+		p := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(p)
+		if s == nil {
+			t.Error("File not found in sandbox: %v", p)
+		}
+	}
+}
+
+func TestEmptyStreamLoad(t *testing.T) {
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", "sirnewton | gojazz-test", "-stream=Empty Stream", "-sandbox=" + sandbox1}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	// Verify that only the jazzMeta file is created in the sandbox
+	f, err := os.Open(sandbox1)
+	if err != nil {
+		panic(err)
+	}
+
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(names) != 1 {
+		t.Fatalf("Expected 1 file but found %v files", len(names))
+	}
+
+	if names[0] != metadataFileName {
+		t.Fatalf("Expected only the metadata file but found %v", names[0])
+	}
+}
+
+func TestSwitchStreams(t *testing.T) {
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", "sirnewton | gojazz-test", "-sandbox=" + sandbox1}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", "sirnewton | gojazz-test", "-stream=Alternate Stream", "-sandbox=" + sandbox1}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	// Verify that specific files show up
+	filesToCheck := []string{
+		"README.md", "project.json", "bigFile.txt", ".jazzignore",
+		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped", "bin",
+		"bin/mybinary.so", "filename(with)[chars$]^that.must-be-escaped/test.java",
+		"folder/file.exe", "folder/file2.jsp", "folder/file3.jar",
+		"folder/filename(with)[chars$]^that.must-be-escaped",
+		"alternateFile.txt", "alternateFolder", "alternateFolder/anotherAlternateFolder",
+		"alternateFolder/anotherAlternateFile.txt",
+	}
+	for _, file := range filesToCheck {
+		p := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(p)
+		if s == nil {
+			t.Error("File not found in sandbox: %v", p)
+		}
+	}
+
+	// Verify that the file from the other stream no longer exists
+	filesToCheck = []string{
+		"folder/file1.txt",
+	}
+	for _, file := range filesToCheck {
+		p := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(p)
+		if s != nil {
+			t.Error("File from the wrong stream found in sandbox: %v", p)
+		}
+	}
+
+	// Verify that there are no backups since nothing was modified
+	s, _ := os.Stat(filepath.Join(sandbox1, backupFolder))
+	if s != nil {
+		t.Fatalf("Found a backup folder even though no changes were made.")
 	}
 }
