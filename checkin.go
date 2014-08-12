@@ -117,6 +117,16 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 		remoteFile, err := Open(client, ccmBaseUrl, workspaceId, componentId, modifiedpath)
 		if err != nil {
+			// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
+			//  parent directories are not there.
+			fileerror, ok := err.(*JazzError)
+
+			if ok && fileerror.StatusCode == 404 {
+				fmt.Printf("Cannot check-in file at path %v since it no longer exists at the same location on the remote.\n", modifiedpath)
+				fmt.Printf("The file has been temporarily backed up in the following location: %v\n", stagepath)
+				continue
+			}
+
 			panic(err)
 		}
 
