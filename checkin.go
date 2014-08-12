@@ -122,11 +122,15 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 		// TODO better checking and matching for the file, perhaps by item ID?
 		if remoteFile.info.Directory {
-			panic(simpleWarning(fmt.Sprintf("Cannot check-in file at path %v. There is a folder at this location on the remote.", modifiedpath)))
+			fmt.Printf("Cannot check-in file at path %v. There is a folder at this location on the remote.\n", modifiedpath)
+			fmt.Printf("The file has been temporarily backed up in the following location: %v\n", stagepath)
+			continue
 		}
 		// Ooops, this is the wrong file
 		if remoteFile.info.ScmInfo.ItemId != meta.ItemId {
-			panic(simpleWarning(fmt.Sprintf("Cannot check-in file at path %v. It is not the same as the one that was originally loaded", modifiedpath)))
+			fmt.Printf("Cannot check-in file at path %v. It is not the same as the one that was originally loaded.\n", modifiedpath)
+			fmt.Printf("The file has been temporarily backed up in the following location: %v\n", stagepath)
+			continue
 		}
 
 		newmeta := checkinFile(client, stagepath, remoteFile)
