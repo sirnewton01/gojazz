@@ -182,7 +182,7 @@ func TestAlternateStreamLoad(t *testing.T) {
 
 	// Verify that specific files show up
 	filesToCheck := []string{
-		"README.md", "project.json", "bigFile.txt", ".jazzignore",
+		"project.json", "bigFile.txt", ".jazzignore",
 		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped", "bin",
 		"bin/mybinary.so", "filename(with)[chars$]^that.must-be-escaped/test.java",
 		"folder/file.exe", "folder/file2.jsp", "folder/file3.jar",
@@ -252,7 +252,7 @@ func TestSwitchStreams(t *testing.T) {
 
 	// Verify that specific files show up
 	filesToCheck := []string{
-		"README.md", "project.json", "bigFile.txt", ".jazzignore",
+		"project.json", "bigFile.txt", ".jazzignore",
 		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped", "bin",
 		"bin/mybinary.so", "filename(with)[chars$]^that.must-be-escaped/test.java",
 		"folder/file.exe", "folder/file2.jsp", "folder/file3.jar",
@@ -270,7 +270,7 @@ func TestSwitchStreams(t *testing.T) {
 
 	// Verify that the file from the other stream no longer exists
 	filesToCheck = []string{
-		"folder/file1.txt",
+		"folder/file1.txt", "README.md",
 	}
 	for _, file := range filesToCheck {
 		p := filepath.Join(sandbox1, file)
