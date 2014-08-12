@@ -236,7 +236,6 @@ func IsIgnored(path string) (bool, error) {
 	// Should we ignore changes to this file?
 	// Check for signs that it isn't source code
 	//  -Really big file (>10MB)
-	//  -ASCII Control characters
 	//  -File extension (e.g. .exe, .dll, .so)
 	//  -Temporary files left by editors (e.g. *~, *.ext.swp)
 
@@ -269,26 +268,6 @@ func IsIgnored(path string) (bool, error) {
 		return true, nil
 	}
 
-	origFile, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	buffer := make([]byte, 1024, 1024)
-	for {
-		n, _ := origFile.Read(buffer)
-
-		if n == 0 {
-			break
-		}
-
-		for i := 0; i < n; i++ {
-			if buffer[i] < 32 && buffer[i] != '\r' && buffer[i] != '\n' {
-				origFile.Close()
-				return true, nil
-			}
-		}
-	}
-	origFile.Close()
 	return false, nil
 }
 
