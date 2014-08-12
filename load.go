@@ -46,6 +46,7 @@ func loadOp() {
 
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
 	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
+	force := flag.Bool("force", false, "Force the load to overwrite any files. Don't prompt.")
 	flag.Usage = loadDefaults
 	flag.Parse()
 
@@ -194,7 +195,7 @@ func loadOp() {
 		fmt.Printf("Note: Loading from a stream will not allow you to contribute changes. You must load again using the '-workspace=true' option.\n")
 	}
 
-	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, *userId, *sandboxPath, status)
+	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, *userId, *sandboxPath, status, *force)
 
 	fmt.Printf("Load Successful\n")
 
@@ -216,7 +217,7 @@ func loadOp() {
 	}
 }
 
-func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId string, stream bool, userId string, sandbox string, status *status) {
+func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId string, stream bool, userId string, sandbox string, status *status, force bool) {
 	newMetaData := newMetaData()
 	newMetaData.initConcurrentWrite()
 	newMetaData.isstream = stream
@@ -254,7 +255,7 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 				panic(err)
 			}
 
-			if len(children) > 0 {
+			if len(children) > 0 && !force {
 				fmt.Println("There are files in the sandbox directory that will be replaced with the remote files.")
 				fmt.Print("Do you want to proceed? [Y/n]:")
 				reader := bufio.NewReader(os.Stdin)

@@ -16,6 +16,7 @@ func syncDefaults() {
 
 func syncOp() {
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to sync the files")
+	force := flag.Bool("force", false, "Don't prompt for anything. Clobber files when necessary.")
 	flag.Usage = syncDefaults
 	flag.Parse()
 
@@ -47,7 +48,7 @@ func syncOp() {
 	}
 
 	scmCheckin(client, status, *sandboxPath)
-	scmLoad(client, status.metaData.ccmBaseUrl, status.metaData.projectName, status.metaData.workspaceId, status.metaData.isstream, status.metaData.userId, *sandboxPath, status)
+	scmLoad(client, status.metaData.ccmBaseUrl, status.metaData.projectName, status.metaData.workspaceId, status.metaData.isstream, status.metaData.userId, *sandboxPath, status, *force)
 
 	// Force a load/reload of the jazzhub sandbox to avoid out of sync when
 	//  looking at the changes page
