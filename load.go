@@ -259,6 +259,7 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 				fmt.Print("Do you want to proceed? [Y/n]:")
 				reader := bufio.NewReader(os.Stdin)
 				answer, _ := reader.ReadString('\n')
+				answer = strings.TrimSpace(answer)
 
 				if strings.ToLower(answer) == "n" {
 					panic(simpleWarning("Operation Canceled"))
@@ -266,7 +267,7 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 			}
 		}
 	}
-	
+
 	// Delete the old metadata
 	metadataFile := filepath.Join(sandbox, metadataFileName)
 	os.Remove(metadataFile)
@@ -294,9 +295,13 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 	}
 	for _, root := range roots {
 		rootPath := filepath.Join(sandbox, root)
-		rootBase := filepath.Base(rootPath)
-		// Don't delete the backup, staging or metadata files
-		if rootBase == backupFolder || rootBase == stageFolder || rootBase == metadataFileName {
+
+		ignored, err := IsIgnored(rootPath)
+		if err != nil {
+			panic(err)
+		}
+
+		if ignored {
 			continue
 		}
 
@@ -469,6 +474,39 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 				err := os.MkdirAll(localPath, 0700)
 				if err != nil {
 					return err
+				}
+			} else {
+				// Check for any children that aren't on the remote
+				// Remove the extra ones that aren't being ignored
+				localDirectory, err := os.Open(localPath)
+				if err != nil {
+					return err
+				}
+
+				localChildren, err := localDirectory.Readdirnames(-1)
+				for _, localChild := range localChildren {
+					existsOnRemote := false
+
+					for _, remoteChild := range file.info.Children {
+						if remoteChild.Name == localChild {
+							existsOnRemote = true
+							break
+						}
+					}
+
+					if !existsOnRemote {
+						localChildPath := filepath.Join(localPath, localChild)
+						ignored, err := IsIgnored(localChildPath)
+						if err != nil {
+							return err
+						}
+						if !ignored {
+							err := os.RemoveAll(localChildPath)
+							if err != nil {
+								return err
+							}
+						}
+					}
 				}
 			}
 

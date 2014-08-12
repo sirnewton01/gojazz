@@ -147,14 +147,19 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 			return err
 		}
 
-		// Skip the metadata, staging and backup directories
-		if path == sandboxPath || filepath.Base(path) == metadataFileName || strings.Contains(path, stageFolder) || strings.Contains(path, backupFolder) {
+		if path == sandboxPath {
 			return nil
 		}
 
-		// Skip binary directories
-		if strings.HasSuffix(path, "/bin") {
+		ignored, err := IsIgnored(path)
+		if err != nil {
+			return err
+		}
+
+		if ignored && info.IsDir() {
 			return filepath.SkipDir
+		} else if ignored {
+			return nil
 		}
 
 		meta, ok := oldMetaData.get(path, sandboxPath)
@@ -227,6 +232,66 @@ func (status *status) calcCopyPath(path string) string {
 	return filepath.Join(status.copyPath, relpath)
 }
 
+func IsIgnored(path string) (bool, error) {
+	// Should we ignore changes to this file?
+	// Check for signs that it isn't source code
+	//  -Really big file (>10MB)
+	//  -ASCII Control characters
+	//  -File extension (e.g. .exe, .dll, .so)
+	//  -Temporary files left by editors (e.g. *~, *.ext.swp)
+
+	base := filepath.Base(path)
+
+	// Skip the metadata, staging and backup directories
+	if base == metadataFileName || strings.Contains(path, stageFolder) || strings.Contains(path, backupFolder) {
+		return true, nil
+	}
+
+	// Skip bin directories
+	if strings.HasSuffix(path, "/bin") || strings.Contains(path, "/bin/") {
+		return true, nil
+	}
+
+	if strings.HasSuffix(base, ".exe") || strings.HasSuffix(base, ".dll") || strings.HasSuffix(base, ".so") {
+		return true, nil
+	}
+
+	if strings.HasSuffix(base, "~") || strings.HasSuffix(base, ".ext.swp") {
+		return true, nil
+	}
+
+	s, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+
+	if s.Size() > 10*1024*1024 {
+		return true, nil
+	}
+
+	origFile, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	buffer := make([]byte, 1024, 1024)
+	for {
+		n, _ := origFile.Read(buffer)
+
+		if n == 0 {
+			break
+		}
+
+		for i := 0; i < n; i++ {
+			if buffer[i] < 32 && buffer[i] != '\r' && buffer[i] != '\n' {
+				origFile.Close()
+				return true, nil
+			}
+		}
+	}
+	origFile.Close()
+	return false, nil
+}
+
 func (status *status) fileAdded(path string, sandboxPath string) {
 	rel, err := filepath.Rel(sandboxPath, path)
 	if err != nil {
@@ -236,42 +301,6 @@ func (status *status) fileAdded(path string, sandboxPath string) {
 	s, err := os.Stat(path)
 	if err != nil {
 		panic(err)
-	}
-
-	// Should we ignore this new file?
-	// Check for signs that it isn't source code
-	//  -Really big file (>1MB)
-	//  -Control characters
-	//  -File extension (e.g. .exe, .dll, .so)
-	//  -Temporary files left by editors (e.g. *~, *.ext.swp)
-	if !s.IsDir() {
-		base := filepath.Base(path)
-		if strings.HasSuffix(base, ".exe") || strings.HasSuffix(base, ".dll") || strings.HasSuffix(base, ".so") {
-			return
-		}
-
-		if strings.HasSuffix(base, "~") || strings.HasSuffix(base, ".ext.swp") {
-			return
-		}
-
-		if s.Size() > 1024^2 {
-			return
-		}
-
-		origFile, err := os.Open(path)
-		if err != nil {
-			panic(err)
-		}
-		buffer := make([]byte, 1024, 1024)
-		for n, _ := origFile.Read(buffer); n > 0; {
-			for i := 0; i < n; i++ {
-				if buffer[i] < 32 && buffer[i] != '\r' && buffer[i] != 'n' {
-					origFile.Close()
-					return
-				}
-			}
-		}
-		origFile.Close()
 	}
 
 	status.Added[rel] = true
