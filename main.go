@@ -21,7 +21,8 @@ func (jError *JazzError) Error() string {
 
 func errorFromResponse(response *http.Response) *JazzError {
 	b, _ := ioutil.ReadAll(response.Body)
-	return &JazzError{Msg: response.Status, StatusCode: response.StatusCode, Details: string(b), Log: response.StatusCode > 499}
+	requestString := response.Request.Method + ": " + response.Request.URL.String() + "\n"
+	return &JazzError{Msg: response.Status, StatusCode: response.StatusCode, Details: requestString + string(b), Log: response.StatusCode > 499}
 }
 
 func simpleWarning(msg string) *JazzError {

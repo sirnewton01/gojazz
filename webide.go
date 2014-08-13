@@ -22,6 +22,7 @@ type OrionResponse struct {
 
 type OrionResult struct {
 	HttpCode int
+	Message  string
 	JsonData interface{}
 }
 
@@ -69,12 +70,17 @@ func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) er
 			// Spin and try again
 			continue
 		}
-		
+
 		orionResp := &OrionResponse{}
 		orionResp.Result.JsonData = v
 		err = json.Unmarshal(b, orionResp)
 		if err != nil {
 			return err
+		}
+
+		if orionResp.Result.HttpCode != 200 {
+			requestString := resp.Request.Method + ": " + resp.Request.URL.String() + "\n"
+			return &JazzError{Msg: orionResp.Result.Message, StatusCode: orionResp.Result.HttpCode, Details: requestString + string(b), Log: orionResp.Result.HttpCode > 499}
 		}
 
 		if orionResp.Result.HttpCode != 0 {

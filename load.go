@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/howeyc/gopass"
 )
@@ -175,6 +176,7 @@ func loadOp() {
 				//	}
 
 				workspaceId, err = initWebIdeProject(client, project, *userId)
+
 				if err != nil {
 					panic(err)
 				}
@@ -415,7 +417,12 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 
 				remoteFile, err := Open(client, ccmBaseUrl, workspaceId, componentId, pathToDownload)
 				if err != nil {
-					panic(err)
+					// We try one more time with a small timeout
+					<-time.After(10 * time.Millisecond)
+					remoteFile, err = Open(client, ccmBaseUrl, workspaceId, componentId, pathToDownload)
+					if err != nil {
+						panic(err)
+					}
 				}
 
 				scmInfo := remoteFile.info.ScmInfo

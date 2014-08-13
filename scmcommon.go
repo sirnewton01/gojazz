@@ -252,6 +252,9 @@ func FindComponentIds(client *Client, ccmBaseUrl string, workspaceId string) ([]
 }
 
 func FindComponents(client *Client, ccmBaseUrl string, workspaceId string) ([]FileInfo, error) {
+	if workspaceId == "" {
+		return []FileInfo{}, errors.New("No workspace ID provided")
+	}
 	url := path.Join(ccmBaseUrl, "/service/com.ibm.team.filesystem.service.jazzhub.IOrionFilesystem/pa/_/", workspaceId)
 	url = strings.Replace(url, ":/", "://", 1)
 	result := []FileInfo{}
