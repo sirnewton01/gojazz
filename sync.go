@@ -39,8 +39,12 @@ func syncOp() {
 		panic(simpleWarning("Sync is for repository workspaces, use load instead to incrementally update your loaded stream."))
 	}
 
-	fmt.Printf("Password: ")
-	password := string(gopass.GetPasswd())
+	password := os.Getenv(PASSWORD_ENV)
+
+	if password == "" {
+		fmt.Printf("Password: ")
+		password = string(gopass.GetPasswd())
+	}
 
 	client, err := NewClient(status.metaData.userId, password)
 	if err != nil {

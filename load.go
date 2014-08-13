@@ -19,6 +19,7 @@ import (
 const (
 	numGoRoutines = 10
 	bufferSize    = 1000
+	PASSWORD_ENV  = "DOS_PASSWORD"
 )
 
 func loadDefaults() {
@@ -60,7 +61,7 @@ func loadOp() {
 		sandboxPath = &path
 	}
 
-	password := ""
+	password := os.Getenv(PASSWORD_ENV)
 
 	if *workspace && *userId == "" {
 		fmt.Println("You must provide credentials to use a repository workspace.")
@@ -82,7 +83,7 @@ func loadOp() {
 		userId = &status.metaData.userId
 	}
 
-	if *userId != "" {
+	if *userId != "" && password == "" {
 		fmt.Printf("Password: ")
 		password = string(gopass.GetPasswd())
 	}

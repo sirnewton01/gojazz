@@ -51,8 +51,11 @@ func checkinOp() {
 		return
 	}
 
-	fmt.Printf("Password: ")
-	password := string(gopass.GetPasswd())
+	password := os.Getenv(PASSWORD_ENV)
+	if password == "" {
+		fmt.Printf("Password: ")
+		password = string(gopass.GetPasswd())
+	}
 
 	client, err := NewClient(status.metaData.userId, password)
 	if err != nil {

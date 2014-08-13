@@ -26,10 +26,13 @@ type OrionResult struct {
 
 func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) error {
 	if resp.StatusCode == 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		err := json.Unmarshal(b, v)
-		resp.Body.Close()
-		return err
+		defer resp.Body.Close()
+		if v != nil {
+			b, _ := ioutil.ReadAll(resp.Body)
+			err := json.Unmarshal(b, v)
+			return err
+		}
+		return nil
 	} else if resp.StatusCode != 202 {
 		defer resp.Body.Close()
 		return errorFromResponse(resp)
@@ -57,6 +60,8 @@ func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) er
 			defer resp.Body.Close()
 			return errorFromResponse(resp)
 		}
+
+		defer resp.Body.Close()
 
 		b, _ := ioutil.ReadAll(resp.Body)
 		orionResp := &OrionResponse{}
@@ -134,8 +139,8 @@ func loadWorkspace(client *Client, projectName string, workspaceId string) error
 		return err
 	}
 
-	result := make(map[string]interface{})
-	err = waitForOrionResponse(client, resp, result)
+	var result struct{}
+	err = waitForOrionResponse(client, resp, &result)
 	if err != nil {
 		return err
 	}
