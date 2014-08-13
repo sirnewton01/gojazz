@@ -431,6 +431,7 @@ func TestLoadWorkspace(t *testing.T) {
 
 func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 	projectName := "sirnewton | gojazz-test2"
+	cleanWorkspace(projectName)
 
 	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test2")
 	if err != nil {
@@ -443,6 +444,8 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true", "-userId=" + userId}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	loadOp()
+
+	defer cleanWorkspace(projectName)
 
 	// Make adds and mods to the files
 	for _, file := range testContentsWithoutIgnoredStuff {
@@ -516,5 +519,156 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 }
 
 func TestLocalChangeDetection(t *testing.T) {
+	projectName := "sirnewton | gojazz-test2"
+	cleanWorkspace(projectName)
 
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true", "-userId=" + userId}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	defer cleanWorkspace(projectName)
+
+	// Make adds, mods and deletes to the files
+	rootFolder := filepath.Join(sandbox1, "added")
+	err = os.Mkdir(rootFolder, 0700)
+	if err != nil {
+		panic(err)
+	}
+
+	rootFile := filepath.Join(sandbox1, "added.txt")
+	f, err := os.Create(rootFile)
+	if err != nil {
+		panic(err)
+	}
+	f.Close()
+
+	// Record all of the changes to verify at the end
+	numChanges := 2
+
+	for _, file := range testContents {
+		path := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(path)
+		if s == nil {
+			t.Error("File not found in sandbox: %v", path)
+			continue
+		}
+
+		if file == "folder/file1.txt" {
+			err := os.Remove(path)
+			if err != nil {
+				panic(err)
+			}
+			numChanges += 1
+			continue
+		}
+
+		ignored, err := IsIgnored(path)
+		if err != nil {
+			panic(err)
+		}
+
+		if s.IsDir() {
+			added, err := os.Create(filepath.Join(path, "added.txt"))
+			if err != nil {
+				panic(err)
+			}
+			defer added.Close()
+			_, err = added.Write([]byte("test contents"))
+			if err != nil {
+				panic(err)
+			}
+
+			err = os.Mkdir(filepath.Join(path, "added"), 0700)
+			if err != nil {
+				panic(err)
+			}
+
+			if !ignored {
+				numChanges += 2
+			}
+		} else {
+			modFile, err := os.OpenFile(path, os.O_WRONLY, 0)
+			if err != nil {
+				panic(err)
+			}
+			defer modFile.Close()
+
+			_, err = modFile.Write([]byte("new contents123"))
+			if err != nil {
+				panic(err)
+			}
+
+			if !ignored {
+				numChanges += 1
+			}
+		}
+	}
+
+	status, err := scmStatus(sandbox1, NO_COPY)
+	if err != nil {
+		panic(err)
+	}
+	if status.unchanged() {
+		t.Errorf("Status is unchanged even though there are sandbox changes.")
+	}
+
+	_, found := status.Added["added"]
+	if !found {
+		t.Errorf("Added expected but not found: %v", rootFolder)
+	}
+	_, found = status.Added["added.txt"]
+	if !found {
+		t.Errorf("Added expected but not found: %v", rootFile)
+	}
+
+	numChangesFound := len(status.Added) + len(status.Deleted) + len(status.Modified)
+	if numChanges != numChangesFound {
+		t.Errorf("Number of changes doesn't match: %v %v", numChanges, numChangesFound)
+	}
+
+	// Check that all of the files and folders are reported in the status
+	for _, file := range testContentsWithoutIgnoredStuff {
+		if file == "folder/file1.txt" {
+			_, found := status.Deleted[file]
+			if !found {
+				t.Errorf("Deletion expected but not found: %v", file)
+			}
+			continue
+		}
+
+		path := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(path)
+		if s == nil {
+			t.Fatalf("File not found in sandbox: %v", path)
+		}
+
+		if s.IsDir() {
+			newFolder := filepath.Join(file, "added")
+
+			_, found := status.Added[newFolder]
+			if !found {
+				t.Errorf("Added expected but not found: %v", newFolder)
+			}
+
+			newFile := filepath.Join(file, "added.txt")
+
+			_, found = status.Added[newFile]
+			if !found {
+				t.Errorf("Added expected but not found: %v", newFile)
+			}
+		} else {
+			_, found := status.Modified[file]
+			if !found {
+				t.Errorf("Modification expected but not found: %v", file)
+			}
+		}
+	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"path"
@@ -63,7 +64,12 @@ func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) er
 
 		defer resp.Body.Close()
 
-		b, _ := ioutil.ReadAll(resp.Body)
+		b, err := ioutil.ReadAll(resp.Body)
+		if err == io.EOF {
+			// Spin and try again
+			continue
+		}
+		
 		orionResp := &OrionResponse{}
 		orionResp.Result.JsonData = v
 		err = json.Unmarshal(b, orionResp)
