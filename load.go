@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,10 +18,30 @@ import (
 )
 
 const (
-	numGoRoutines = 10
-	bufferSize    = 1000
-	PASSWORD_ENV  = "DOS_PASSWORD"
+	numGoRoutines     = 10
+	bufferSize        = 1000
+	PASSWORD_FILE_ENV = "DOS_PASSWORD_FILE"
 )
+
+var (
+	password = ""
+)
+
+func init() {
+	if password == "" {
+		file := os.Getenv(PASSWORD_FILE_ENV)
+		if file != "" {
+			f, err := os.Open(file)
+			if err == nil {
+				defer f.Close()
+				b, err := ioutil.ReadAll(f)
+				if err == nil {
+					password = string(b)
+				}
+			}
+		}
+	}
+}
 
 func loadDefaults() {
 	fmt.Printf("gojazz load [<project name> [options]]\n")
@@ -60,8 +81,6 @@ func loadOp() {
 		path = findSandbox(path)
 		sandboxPath = &path
 	}
-
-	password := os.Getenv(PASSWORD_ENV)
 
 	if *workspace && *userId == "" {
 		fmt.Println("You must provide credentials to use a repository workspace.")

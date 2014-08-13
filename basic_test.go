@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	userId   = os.Getenv("DOS_USERID")
-	password = os.Getenv(PASSWORD_ENV)
+	userId = os.Getenv("DOS_USERID")
 
 	testContents = []string{
 		"README.md", "project.json", "bigFile.txt", ".jazzignore",
@@ -46,7 +45,7 @@ var (
 
 func init() {
 	if userId == "" || password == "" {
-		fmt.Printf("Please provide your IBM DevOps services user ID as environment variables: DOS_USERID, DOS_PASSWORD\n")
+		fmt.Printf("Please use the test.sh script to run the tests.\n")
 		os.Exit(1)
 	}
 }

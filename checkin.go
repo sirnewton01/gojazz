@@ -51,7 +51,6 @@ func checkinOp() {
 		return
 	}
 
-	password := os.Getenv(PASSWORD_ENV)
 	if password == "" {
 		fmt.Printf("Password: ")
 		password = string(gopass.GetPasswd())
