@@ -228,9 +228,18 @@ func loadOp() {
 		if err != nil {
 			panic(err)
 		}
-		_, err = initWebIdeProject(client, project, *userId)
+
+		// Check if the project is already there, don't initialize it again
+		webIdeProject, err := findWebIdeProject(client, project)
 		if err != nil {
 			panic(err)
+		}
+
+		if webIdeProject == "" {
+			_, err = initWebIdeProject(client, project, *userId)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		fmt.Println("Visit the following link to work with your repository workspace:")

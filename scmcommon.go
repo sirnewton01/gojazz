@@ -139,7 +139,8 @@ type soapitem struct {
 	Workspace soapworkspace `json:"workspace"`
 }
 type soapworkspace struct {
-	Flow   []soapworkspaceflow `json:"flow"`
+	Name   string              `json:"name"`
+	Flows  []soapworkspaceflow `json:"flows"`
 	ItemId string              `json:"itemId"`
 }
 type soapworkspaceflow struct {
@@ -183,7 +184,7 @@ func FindWorkspaceForStream(client *Client, ccmBaseUrl string, streamId string) 
 	}
 
 	for _, item := range result.Body.Response.ReturnValue.Value.Items {
-		for _, flow := range item.Workspace.Flow {
+		for _, flow := range item.Workspace.Flows {
 			if flow.Flags&0x1 == 0x1 && flow.TargetWorkspace.ItemId == streamId {
 				return item.Workspace.ItemId, nil
 			}

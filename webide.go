@@ -12,8 +12,10 @@ import (
 )
 
 func addOrionHeaders(request *http.Request) {
+	request.Header.Add("Orion-Version", "1")
 	request.Header.Add("Jazz-Version", "2")
 	request.Header.Add("Content-Type", "application/json; charset=UTF-8")
+	request.Header.Add("X-Requested-With", "XMLHttpRequest")
 }
 
 type OrionResponse struct {
@@ -108,7 +110,7 @@ func initWebIdeProject(client *Client, project Project, userName string) (string
 		"uuid": "`+project.ItemId+`",
 		"user": "`+userName+`",
 		"deleteSource": true,
-		"initProject": false,
+		"initProject": true,
 		"initReadme": false
 	}`))
 	if err != nil {
@@ -158,4 +160,38 @@ func loadWorkspace(client *Client, projectName string, workspaceId string) error
 	}
 
 	return nil
+}
+
+func findWebIdeProject(client *Client, project Project) (string, error) {
+	if client.GetJazzId() == "" {
+		return "", errors.New("Not logged in")
+	}
+
+	url := path.Join(jazzHubBaseUrl, "/code/file", client.GetJazzId()+"-OrionContent", project.Name) + "?parts=meta"
+	url = strings.Replace(url, ":/", "://", 1)
+
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	addOrionHeaders(request)
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct{}
+	err = waitForOrionResponse(client, resp, &result)
+	if err != nil {
+		jazzError, ok := err.(*JazzError)
+		if ok {
+			if jazzError.StatusCode == 404 {
+				return "", nil
+			}
+		}
+		return "", err
+	}
+
+	return project.Name, nil
 }
