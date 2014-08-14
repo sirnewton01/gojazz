@@ -108,7 +108,7 @@ func initWebIdeProject(client *Client, project Project, userName string) (string
 		"uuid": "`+project.ItemId+`",
 		"user": "`+userName+`",
 		"deleteSource": true,
-		"initProject": true,
+		"initProject": false,
 		"initReadme": false
 	}`))
 	if err != nil {
