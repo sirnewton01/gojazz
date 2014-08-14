@@ -78,7 +78,7 @@ func waitForOrionResponse(client *Client, resp *http.Response, v interface{}) er
 			return err
 		}
 
-		if orionResp.Result.HttpCode != 200 {
+		if orionResp.Result.HttpCode != 200 && orionResp.Result.HttpCode != 0 {
 			requestString := resp.Request.Method + ": " + resp.Request.URL.String() + "\n"
 			return &JazzError{Msg: orionResp.Result.Message, StatusCode: orionResp.Result.HttpCode, Details: requestString + string(b), Log: orionResp.Result.HttpCode > 499}
 		}

@@ -62,8 +62,8 @@ func main() {
 				return
 			}
 
-			fmt.Printf("%v\n", jazzError.Msg)
 			if jazzError.Log {
+				fmt.Printf("ERROR: %v\n", jazzError.Msg)
 				logfile, err := ioutil.TempFile("", "gojazz-log")
 				if err == nil {
 					fmt.Printf("Writing details of this problem to %v\n", logfile.Name())
@@ -71,6 +71,8 @@ func main() {
 					logfile.Write([]byte(fmt.Sprintf("DETAILS: %v\n", jazzError.Details)))
 					logfile.Write(debug.Stack())
 				}
+			} else {
+				fmt.Printf("%v\n", jazzError.Msg)
 			}
 		} else {
 			fmt.Printf("ERROR: %v\n", r)
