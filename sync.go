@@ -50,6 +50,12 @@ func syncOp() {
 	}
 
 	scmCheckin(client, status, *sandboxPath)
+
+	// Clear out all of the changes in the status before performing the load
+	status.Added = make(map[string]bool)
+	status.Modified = make(map[string]bool)
+	status.Deleted = make(map[string]bool)
+
 	scmLoad(client, status.metaData.ccmBaseUrl, status.metaData.projectName, status.metaData.workspaceId, status.metaData.isstream, status.metaData.userId, *sandboxPath, status, *force)
 
 	// Force a load/reload of the jazzhub sandbox to avoid out of sync when

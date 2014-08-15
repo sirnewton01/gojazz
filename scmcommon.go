@@ -589,7 +589,7 @@ func MkdirAll(client *Client, ccmBaseUrl string, workspaceId string, componentId
 func Remove(client *Client, ccmBaseUrl string, workspaceId string, componentId string, p string) error {
 	f := &File{}
 	f.client = client
-	f.url = assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p)
+	f.url = assembleOFSUrl(ccmBaseUrl, workspaceId, componentId, p) + "?op=delete"
 
 	request, err := http.NewRequest("POST", f.url, nil)
 	if err != nil {
