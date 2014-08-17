@@ -72,8 +72,9 @@ func loadOp() {
 	password := ""
 
 	// If the user specified a workspace or previously loaded a workspace
-	//  then we will need credentials.
-	if *workspace || (status != nil && !status.metaData.isstream) {
+	//  then we will need credentials. If they are already logged in then
+	//  use those credentials.
+	if *workspace || (status != nil && !status.metaData.isstream) || isLoggedIn() {
 		var err error
 		userId, password, err = getCredentials()
 		if err != nil {
