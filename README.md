@@ -27,7 +27,7 @@ Load the default stream for a project into a local sandbox. Repeat at any time t
 
 Load your repository workspace into a local sandbox. Repeat at any time to erase local changes and start over with what is in your repository workspace.
 
-`gojazz load "sirnewton | test" -workspace=true -userId=mkent@example.com`
+`gojazz load "sirnewton | test" -workspace=true`
 
 Find the modified files in your local sandbox.
 
