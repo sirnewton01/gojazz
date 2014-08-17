@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/howeyc/gopass"
 )
 
 func checkinDefaults() {
@@ -51,12 +49,12 @@ func checkinOp() {
 		return
 	}
 
-	if password == "" {
-		fmt.Printf("Password: ")
-		password = string(gopass.GetPasswd())
+	userId, password, err := getCredentials()
+	if err != nil {
+		panic(err)
 	}
 
-	client, err := NewClient(status.metaData.userId, password)
+	client, err := NewClient(userId, password)
 	if err != nil {
 		panic(err)
 	}

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-
-	"github.com/howeyc/gopass"
 )
 
 func syncDefaults() {
@@ -39,12 +37,12 @@ func syncOp() {
 		panic(simpleWarning("Sync is for repository workspaces, use load instead to incrementally update your loaded stream."))
 	}
 
-	if password == "" {
-		fmt.Printf("Password: ")
-		password = string(gopass.GetPasswd())
+	userId, password, err := getCredentials()
+	if err != nil {
+		panic(err)
 	}
 
-	client, err := NewClient(status.metaData.userId, password)
+	client, err := NewClient(userId, password)
 	if err != nil {
 		panic(err)
 	}

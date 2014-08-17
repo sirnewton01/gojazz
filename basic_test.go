@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -14,8 +13,6 @@ import (
 )
 
 var (
-	userId = os.Getenv("DOS_USERID")
-
 	testContents = []string{
 		"README.md", "project.json", "bigFile.txt", ".jazzignore",
 		".cfignore", "folder", "filename(with)[chars$]^that.must-be-escaped", "bin",
@@ -42,13 +39,6 @@ var (
 		"alternateFolder/anotherAlternateFile.txt",
 	}
 )
-
-func init() {
-	if userId == "" || password == "" {
-		fmt.Printf("Please use the test.sh script to run the tests.\n")
-		os.Exit(1)
-	}
-}
 
 func TestBasicStreamLoad(t *testing.T) {
 	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
@@ -371,6 +361,11 @@ func deleteProject(client *Client, projectName string) error {
 }
 
 func cleanWorkspace(projectName string) {
+	userId, password, err := getCredentials()
+	if err != nil {
+		panic(err)
+	}
+
 	// Clean up any existing repository workspaces and web IDE projects
 	client, err := NewClient(userId, password)
 	if err != nil {
@@ -412,7 +407,7 @@ func TestLoadWorkspace(t *testing.T) {
 	defer os.RemoveAll(sandbox1)
 
 	t.Logf("Loading test project into %v\n", sandbox1)
-	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true", "-userId=" + userId}
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true"}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	loadOp()
 
@@ -440,7 +435,7 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 	defer os.RemoveAll(sandbox1)
 
 	t.Logf("Loading test project into %v\n", sandbox1)
-	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true", "-userId=" + userId}
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true"}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	loadOp()
 
@@ -529,7 +524,7 @@ func TestLocalChangeDetection(t *testing.T) {
 	defer os.RemoveAll(sandbox1)
 
 	t.Logf("Loading test project into %v\n", sandbox1)
-	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true", "-userId=" + userId}
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true"}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	loadOp()
 

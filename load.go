@@ -7,42 +7,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/howeyc/gopass"
 )
 
 const (
-	numGoRoutines     = 10
-	bufferSize        = 1000
-	PASSWORD_FILE_ENV = "DOS_PASSWORD_FILE"
+	numGoRoutines = 10
+	bufferSize    = 1000
 )
-
-var (
-	password = ""
-)
-
-func init() {
-	if password == "" {
-		file := os.Getenv(PASSWORD_FILE_ENV)
-		if file != "" {
-			f, err := os.Open(file)
-			if err == nil {
-				defer f.Close()
-				b, err := ioutil.ReadAll(f)
-				if err == nil {
-					password = string(b)
-				}
-			}
-		}
-	}
-}
 
 func loadDefaults() {
 	fmt.Printf("gojazz load [<project name> [options]]\n")
@@ -68,7 +44,6 @@ func loadOp() {
 	}
 
 	sandboxPath := flag.String("sandbox", "", "Location of the sandbox to load the files")
-	userId := flag.String("userId", "", "Your IBM DevOps Services user ID")
 	force := flag.Bool("force", false, "Force the load to overwrite any files. Don't prompt.")
 	flag.Usage = loadDefaults
 	flag.Parse()
@@ -83,12 +58,6 @@ func loadOp() {
 		sandboxPath = &path
 	}
 
-	if *workspace && *userId == "" {
-		fmt.Println("You must provide credentials to use a repository workspace.")
-		loadDefaults()
-		return
-	}
-
 	// Get the existing status of the sandbox, if available
 	// Back up any changes that are found
 	status, _ := scmStatus(*sandboxPath, BACKUP)
@@ -98,18 +67,22 @@ func loadOp() {
 		fmt.Printf("Your changes have been backed up to this location: %v\n", status.copyPath)
 	}
 
-	// Re-use the existing user ID from the metadata, if available
-	if *userId == "" && status != nil && status.metaData.userId != "" {
-		userId = &status.metaData.userId
-	}
+	// You don't need credentials to load streams of public projects
+	userId := ""
+	password := ""
 
-	if *userId != "" && password == "" {
-		fmt.Printf("Password: ")
-		password = string(gopass.GetPasswd())
+	// If the user specified a workspace or previously loaded a workspace
+	//  then we will need credentials.
+	if *workspace || (status != nil && !status.metaData.isstream) {
+		var err error
+		userId, password, err = getCredentials()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Assemble a client with the user credentials
-	client, err := NewClient(*userId, password)
+	client, err := NewClient(userId, password)
 	if err != nil {
 		panic(err)
 	}
@@ -175,7 +148,7 @@ func loadOp() {
 				//		panic(err)
 				//	}
 
-				workspaceId, err = initWebIdeProject(client, project, *userId)
+				workspaceId, err = initWebIdeProject(client, project, userId)
 
 				if err != nil {
 					panic(err)
@@ -217,7 +190,7 @@ func loadOp() {
 		fmt.Printf("Note: Loading from a stream will not allow you to contribute changes. You must load again using the '-workspace=true' option.\n")
 	}
 
-	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, *userId, *sandboxPath, status, *force)
+	scmLoad(client, ccmBaseUrl, projectName, workspaceId, isstream, userId, *sandboxPath, status, *force)
 
 	fmt.Printf("Load Successful\n")
 
@@ -236,7 +209,7 @@ func loadOp() {
 		}
 
 		if webIdeProject == "" {
-			_, err = initWebIdeProject(client, project, *userId)
+			_, err = initWebIdeProject(client, project, userId)
 			if err != nil {
 				panic(err)
 			}
