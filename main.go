@@ -58,7 +58,7 @@ func getCredentials() (string, string, error) {
 
 		fmt.Printf("Would you like to save these credentials for next time?\n")
 		fmt.Printf("They will be saved into %v and protected with OS permissions.\n", credentialFilePath)
-		fmt.Printf("[Y/n]")
+		fmt.Printf("[Y/n] ")
 		answer, _ := reader.ReadString('\n')
 		answer = strings.TrimSpace(answer)
 
