@@ -5,7 +5,7 @@ It is designed to be a light-weight alternative to the standard Jazz SCM clients
 so that you can work easily with your choice of editors and tools.
 
 There are a minimal number of CLI commands for you to remember.
-You can use the DevOps Services web site to use the rest of the SCM capabilities.
+You can use the DevOps Services web site to use the rest of the SCM and manage your project.
 
 Gojazz should be suitable for many small to medium sized project. As a lightweight tool it lacks some of the more advanced "enterprise" features
 of the standard Jazz SCM clients. Notable omissions include symbolic links,
@@ -41,6 +41,8 @@ Synchronize any local changes in your sandbox and changes in your repository wor
 
 You have a repository workspace on IBM DevOps services to manage your
 changes for a project before you share them with the rest of the team.
+It hooks into the rest of the project management capabilities of the website
+such as tracking and planning.
 It's also a great place to backup your changes in case of disaster.
 
 You can use DevOps Services web site to work with your repository workspaces.
@@ -50,7 +52,7 @@ Gojazz commands will give you the URL to access your repository workspace.
 
 Run the "sync" command on your sandbox often. It will make sure that your
 changes are backed up and it will make sure that you are up-to-date with
-your repository workspace. 
+your repository workspace. As a rule of thumb, you should sync whenever you make changes to your sandbox or when you make changes to your repository workspace on the website.
 
 ## Supported Platforms
 
