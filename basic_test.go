@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -664,5 +665,352 @@ func TestLocalChangeDetection(t *testing.T) {
 				t.Errorf("Modification expected but not found: %v", file)
 			}
 		}
+	}
+}
+
+func TestModificationSameSize(t *testing.T) {
+	projectName := "sirnewton | gojazz-test2"
+	cleanWorkspace(projectName)
+
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true"}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	defer cleanWorkspace(projectName)
+
+	// Make modifications that result in a file that is the same size
+	//  with different characters
+	projectJson := filepath.Join(sandbox1, "project.json")
+	s, err := os.Stat(projectJson)
+	if err != nil {
+		panic(err)
+	}
+
+	size := s.Size()
+	buffer := make([]byte, size)
+	for i := int64(0); i < size; i++ {
+		buffer[i] = 'a'
+	}
+
+	f, err := os.OpenFile(projectJson, os.O_WRONLY, 0660)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	_, err = f.Write(buffer)
+	if err != nil {
+		panic(err)
+	}
+	f.Close()
+
+	s, err = os.Stat(projectJson)
+	if err != nil {
+		panic(err)
+	}
+
+	if s.Size() != size {
+		t.Fatalf("File isn't the same size after modification.")
+		return
+	}
+
+	status, err := scmStatus(sandbox1, NO_COPY)
+	if err != nil {
+		panic(err)
+	}
+	if status.unchanged() {
+		t.Errorf("Status is unchanged even though there are sandbox changes.")
+	}
+}
+
+func TestModificationSameContents(t *testing.T) {
+	projectName := "sirnewton | gojazz-test2"
+	cleanWorkspace(projectName)
+
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true"}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	defer cleanWorkspace(projectName)
+
+	// Make a modification that results in the same file contents
+	tmpFile, err := ioutil.TempFile(os.TempDir(), "gojazz-test-file")
+	if err != nil {
+		panic(err)
+	}
+	defer tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Copy the contents to a temporary file
+	projectJson, err := os.Open(filepath.Join(sandbox1, "project.json"))
+	if err != nil {
+		panic(err)
+	}
+	defer projectJson.Close()
+	_, err = io.Copy(tmpFile, projectJson)
+	if err != nil {
+		panic(err)
+	}
+	tmpFile.Close()
+	projectJson.Close()
+
+	// Copy the contents back to the original file
+	projectJson, err = os.OpenFile(projectJson.Name(), os.O_WRONLY, 0660)
+	if err != nil {
+		panic(err)
+	}
+	defer projectJson.Close()
+	tmpFile, err = os.Open(tmpFile.Name())
+	if err != nil {
+		panic(err)
+	}
+	defer tmpFile.Close()
+	_, err = io.Copy(projectJson, tmpFile)
+	if err != nil {
+		panic(err)
+	}
+	tmpFile.Close()
+	projectJson.Close()
+
+	status, err := scmStatus(sandbox1, NO_COPY)
+	if err != nil {
+		panic(err)
+	}
+	if !status.unchanged() {
+		t.Errorf("Change was detected even without a real change to the file contents.")
+	}
+}
+
+func testCheckins(t *testing.T) {
+	projectName := "sirnewton | gojazz-test2"
+	cleanWorkspace(projectName)
+
+	sandbox1, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(sandbox1)
+
+	t.Logf("Loading test project into %v\n", sandbox1)
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox1, "-workspace=true"}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	defer cleanWorkspace(projectName)
+
+	// Make adds, mods and deletes to the files
+	rootFolder := filepath.Join(sandbox1, "added")
+	err = os.Mkdir(rootFolder, 0700)
+	if err != nil {
+		panic(err)
+	}
+
+	rootFile := filepath.Join(sandbox1, "added.txt")
+	f, err := os.Create(rootFile)
+	if err != nil {
+		panic(err)
+	}
+	f.Close()
+
+	// Record all of the changes to verify at the end
+	numChanges := 2
+
+	for _, file := range testContents {
+		path := filepath.Join(sandbox1, file)
+		s, _ := os.Stat(path)
+		if s == nil {
+			t.Error("File not found in sandbox: %v", path)
+			continue
+		}
+
+		if file == "folder/file1.txt" {
+			err := os.Remove(path)
+			if err != nil {
+				panic(err)
+			}
+			numChanges += 1
+			continue
+		}
+
+		ignored, err := IsIgnored(path)
+		if err != nil {
+			panic(err)
+		}
+
+		if s.IsDir() {
+			added, err := os.Create(filepath.Join(path, "added.txt"))
+			if err != nil {
+				panic(err)
+			}
+			defer added.Close()
+			_, err = added.Write([]byte("test contents"))
+			if err != nil {
+				panic(err)
+			}
+
+			err = os.Mkdir(filepath.Join(path, "added"), 0700)
+			if err != nil {
+				panic(err)
+			}
+
+			if !ignored {
+				numChanges += 2
+			}
+		} else {
+			modFile, err := os.OpenFile(path, os.O_WRONLY, 0)
+			if err != nil {
+				panic(err)
+			}
+			defer modFile.Close()
+
+			_, err = modFile.Write([]byte("new contents123"))
+			if err != nil {
+				panic(err)
+			}
+
+			if !ignored {
+				numChanges += 1
+			}
+		}
+	}
+
+	status, err := scmStatus(sandbox1, NO_COPY)
+	if err != nil {
+		panic(err)
+	}
+	if status.unchanged() {
+		t.Errorf("Status is unchanged even though there are sandbox changes.")
+	}
+
+	t.Logf("Checking in the changes.\n")
+	os.Args = []string{"checkin", "-sandbox=" + sandbox1}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	checkinOp()
+
+	// Load the repository workspaces into a separate sandbox so that we can compare
+	sandbox2, err := ioutil.TempDir(os.TempDir(), "gojazz-test")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(sandbox2)
+
+	t.Logf("Loading test project again into %v\n", sandbox1)
+	os.Args = []string{"load", projectName, "-sandbox=" + sandbox2, "-workspace=true"}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	loadOp()
+
+	// Check for the adds and modifies by walking sandbox1
+	err = filepath.Walk(sandbox1, func(path string, fi os.FileInfo, err error) error {
+		ignored, err := IsIgnored(path)
+		if err != nil {
+			return err
+		}
+
+		if ignored {
+			return nil
+		}
+
+		relpath, err := filepath.Rel(sandbox1, path)
+		if err != nil {
+			return err
+		}
+		otherpath := filepath.Join(sandbox2, relpath)
+
+		s, _ := os.Stat(otherpath)
+		if s == nil {
+			t.Errorf("File %v not found in repository workspace\n", relpath)
+		}
+
+		// Compare file contents
+		if !fi.IsDir() {
+			f1, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f1.Close()
+			f2, err := os.Open(otherpath)
+			if err != nil {
+				return err
+			}
+			defer f2.Close()
+
+			f1Contents, err := ioutil.ReadAll(f1)
+			if err != nil {
+				return err
+			}
+
+			f2Contents, err := ioutil.ReadAll(f2)
+			if err != nil {
+				return err
+			}
+
+			if len(f1Contents) != len(f2Contents) {
+				t.Errorf("File %v has different contents.", relpath)
+			}
+
+			for i := 0; i < len(f1Contents); i++ {
+				if f1Contents[i] != f2Contents[i] {
+					t.Errorf("File %v has different contents.", relpath)
+					break
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Check for the deletes by walking sandbox2
+	err = filepath.Walk(sandbox2, func(path string, fi os.FileInfo, err error) error {
+		ignored, err := IsIgnored(path)
+		if err != nil {
+			return err
+		}
+
+		if ignored {
+			return nil
+		}
+
+		relpath, err := filepath.Rel(sandbox2, path)
+		if err != nil {
+			return err
+		}
+		otherpath := filepath.Join(sandbox1, relpath)
+
+		s, _ := os.Stat(otherpath)
+		if s == nil {
+			t.Errorf("File %v found in repository workspace (should be deleted).\n", relpath)
+		}
+
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	status, err = scmStatus(sandbox1, NO_COPY)
+	if err != nil {
+		panic(err)
+	}
+	if !status.unchanged() {
+		t.Errorf("Checkin left some unchecked-in changes")
 	}
 }
