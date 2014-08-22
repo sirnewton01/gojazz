@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -232,6 +233,208 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	</soapenv:Body>
 </soapenv:Envelope>
 `
+
+	createBuildEngineTemplate = `<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+	xmlns:process="com.ibm.team.process"
+	xmlns:com.ibm.team.repository.common.services="http:///com/ibm/team/core/services.ecore"
+	xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+	xmlns:build="com.ibm.team.build"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<soapenv:Body>
+		<request>
+			<method>save</method>
+			<interface>com.ibm.team.build.internal.common.ITeamBuildBaseService</interface>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexDataArg">
+				<type>COMPLEX</type>
+				<value xsi:type="build:BuildEngine" itemId="%s" supportedBuildDefinitions="">
+					<stateId xsi:nil="true"/>
+					<contextId xsi:nil="true"/>
+					<modified xsi:nil="true"/>
+					<workingCopy>true</workingCopy>
+					<mergePredecessor xsi:nil="true"/>
+					<predecessor xsi:nil="true"/>
+					<supportsCancellation>false</supportsCancellation>
+					<engineContactInterval>0</engineContactInterval>
+					<useTeamScheduler>false</useTeamScheduler>
+					<id>%s</id>
+					<active>true</active>
+					<description></description>
+					<modifiedBy xsi:nil="true"/>
+					<buildEngineActivity xsi:nil="true"/>
+					<processArea  itemId="%s"  stateId="%s"  xsi:type="process:ProjectAreaHandle" />
+					<properties>
+						<internalId xsi:nil="true"/>
+						<name>com.ibm.team.build.internal.engine.monitoring.threshold</name>
+						<value>3</value>
+						<genericEditAllowed>false</genericEditAllowed>
+					</properties>
+					<properties>
+						<internalId xsi:nil="true"/>
+						<name>com.ibm.team.build.internal.engine.template.id</name>
+						<value>com.ibm.team.build.engine.jbe</value>
+						<genericEditAllowed>false</genericEditAllowed>
+					</properties>
+					<configurationElements>
+						<internalId xsi:nil="true"/>
+						<elementId>com.ibm.team.build.engine.general</elementId>
+						<internalBuildPhase>UNSPECIFIED</internalBuildPhase>
+						<name>General</name>
+						<description>General configuration such as the polling interval. This configuration is edited on the Overview tab of the build engine editor.</description>
+					</configurationElements>
+					<configurationElements>
+						<internalId xsi:nil="true"/>
+						<elementId>com.ibm.team.build.engine.properties</elementId>
+						<internalBuildPhase>UNSPECIFIED</internalBuildPhase>
+						<name>Properties</name>
+						<description>Generic properties that are available to build scripts. The properties are edited in the Properties section of the build engine editor.</description>
+					</configurationElements>
+				</value>
+			</parameters>
+		</request>
+	</soapenv:Body>
+</soapenv:Envelope>
+`
+
+	fetchFullProjectAreaTemplate = `<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+	xmlns:process="com.ibm.team.process"
+	xmlns:com.ibm.team.repository.common.services="http:///com/ibm/team/core/services.ecore"
+	xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<soapenv:Body>
+		<request>
+			<method>fetchOrRefreshItems</method>
+			<interface>com.ibm.team.repository.common.internal.IRepositoryRemoteService</interface>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexArrayDataArg">
+				<type>COMPLEX</type>
+				<values xsi:type="process:ProjectAreaHandle" itemId="%s">
+				</values>
+			</parameters>
+			<parameters xsi:type="com.ibm.team.repository.common.services:NullDataArg">
+				<type>NULL</type>
+			</parameters>
+		</request>
+	</soapenv:Body>
+</soapenv:Envelope>
+`
+
+	createBuildDefinitionTemplate = `<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+	xmlns:process="com.ibm.team.process"
+	xmlns:com.ibm.team.repository.common.services="http:///com/ibm/team/core/services.ecore"
+	xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+	xmlns:build="com.ibm.team.build"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<soapenv:Body>
+		<request>
+			<method>saveBuildDefinition</method>
+			<interface>com.ibm.team.build.internal.common.ITeamBuildService</interface>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexDataArg">
+				<type>COMPLEX</type>
+				<value xsi:type="build:BuildDefinition" itemId="%s" expectedContributions="">
+					<stateId xsi:nil="true"/>
+					<contextId xsi:nil="true"/>
+					<modified xsi:nil="true"/>
+					<workingCopy>true</workingCopy>
+					<mergePredecessor xsi:nil="true"/>
+					<predecessor xsi:nil="true"/>
+					<id>%s</id>
+					<description></description>
+					<ignoreWarnings>true</ignoreWarnings>
+					<modifiedBy xsi:nil="true"/>
+					<buildResultPruningPolicy>
+						<internalId xsi:nil="true"/>
+					</buildResultPruningPolicy>
+					<properties>
+						<internalId xsi:nil="true"/>
+						<name>com.ibm.team.build.internal.template.id</name>
+						<value>com.ibm.team.build.cmdline</value>
+						<genericEditAllowed>false</genericEditAllowed>
+					</properties>
+					<buildSchedule>
+						<internalId xsi:nil="true"/>
+					</buildSchedule>
+					<buildAverageData xsi:nil="true"/>
+					<processArea  itemId="%s"  stateId="%s"  xsi:type="process:ProjectAreaHandle" />
+					<configurationElements>
+						<internalId xsi:nil="true"/>
+						<elementId>com.ibm.team.build.general</elementId>
+						<internalBuildPhase>UNSPECIFIED</internalBuildPhase>
+						<name>General</name>
+						<description>General configuration such as the pruning policy. This configuration is edited on the Overview tab of the build definition editor.</description>
+					</configurationElements>
+					<configurationElements>
+						<internalId xsi:nil="true"/>
+						<elementId>com.ibm.team.build.schedule</elementId>
+						<internalBuildPhase>UNSPECIFIED</internalBuildPhase>
+						<name>Schedule</name>
+						<description>Build scheduling using the Jazz scheduler. The schedule can be edited on the Schedule tab of the build definition editor.</description>
+					</configurationElements>
+					<configurationElements>
+						<internalId xsi:nil="true"/>
+						<elementId>com.ibm.team.build.properties</elementId>
+						<internalBuildPhase>UNSPECIFIED</internalBuildPhase>
+						<name>Properties</name>
+						<description>Generic properties that are available to build scripts. The properties can be edited on the Properties tab of the build definition editor.</description>
+					</configurationElements>
+					<configurationElements>
+						<internalId xsi:nil="true"/>
+						<elementId>com.ibm.team.build.cmdline</elementId>
+						<internalBuildPhase>BUILD</internalBuildPhase>
+						<name>Command Line </name>
+						<description>Configuration for a command line build using the Jazz Build Engine.</description>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.cmdline.command</name>
+							<value>cd</value>
+						</configurationProperties>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.cmdline.arguments</name>
+						</configurationProperties>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.cmdline.workingDir</name>
+						</configurationProperties>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.cmdline.environmentVariablePolicy</name>
+						</configurationProperties>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.cmdline.environmentVariablePrefix</name>
+						</configurationProperties>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.cmdline.propertiesFile</name>
+						</configurationProperties>
+						<configurationProperties>
+							<internalId xsi:nil="true"/>
+							<name>com.ibm.team.build.engine.variable.substitution</name>
+						</configurationProperties>
+					</configurationElements>
+				</value>
+			</parameters>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexArrayDataArg">
+				<type>COMPLEX</type>
+				<values xsi:type="build:BuildEngineHandle" itemId="%s">
+				</values>
+			</parameters>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ObjectArrayDataArg">
+				<type>OBJECT_ARRAY</type>
+				<dataArgs xsi:type="com.ibm.team.repository.common.services:PrimitiveDataArg">
+					<type>INTEGER</type>
+					<value>1</value>
+				</dataArgs>
+			</parameters>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexArrayDataArg">
+				<type>COMPLEX</type>
+			</parameters>
+		</request>
+	</soapenv:Body>
+</soapenv:Envelope>
+`
 )
 
 type ItemHandleEnvelope struct {
@@ -271,6 +474,12 @@ func getBuildDefinition(client *Client, ccmBaseUrl string, id string) (ItemHandl
 		return buildDefHandle, err
 	}
 
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return buildDefHandle, errorFromResponse(response)
+	}
+
 	b, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		return buildDefHandle, err
@@ -301,6 +510,12 @@ func getBuildEngine(client *Client, ccmBaseUrl string, id string) (ItemHandle, e
 	response, err := client.Do(request)
 	if err != nil {
 		return buildEngineHandle, err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return buildEngineHandle, errorFromResponse(response)
 	}
 
 	b, err := ioutil.ReadAll(response.Body)
@@ -364,6 +579,12 @@ func startBuild(client *Client, ccmBaseUrl string, buildDefHandle ItemHandle, bu
 	response, err := client.Do(request)
 	if err != nil {
 		return requestBuildHandle.BuildResultHandle, err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return requestBuildHandle.BuildResultHandle, errorFromResponse(response)
 	}
 
 	b, err := ioutil.ReadAll(response.Body)
@@ -445,6 +666,12 @@ func fetchFullBuildResult(client *Client, ccmBaseUrl string, buildResultHandle R
 		return buildResult, err
 	}
 
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return buildResult, errorFromResponse(response)
+	}
+
 	b, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		return buildResult, err
@@ -463,20 +690,26 @@ func fetchFullBuildResult(client *Client, ccmBaseUrl string, buildResultHandle R
 
 func saveFullBuildResult(client *Client, ccmBaseUrl string, buildResult BuildResult) error {
 	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.build.internal.common.ITeamBuildService")
+	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
 
 	requestBody := fmt.Sprintf(saveBuildResultTemplate, buildResult.ItemId, buildResult.Immutable, buildResult.ContextId, buildResult.StateId, buildResult.BuildStatus, buildResult.BuildState, buildResult.Label, buildResult.BuildTimeTaken, buildResult.BuildStartTime, buildResult.IgnoreWarnings, buildResult.Tags, buildResult.DeleteAllowed, buildResult.PersonalBuild, buildResult.BuildDefinition.ItemId, buildResult.BuildDefinition.StateId, buildResult.BuildActivities[0].ItemId)
 
 	reader := strings.NewReader(requestBody)
 
-	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
 	request, err := http.NewRequest("POST", requestBuildServiceUrl, reader)
 	if err != nil {
 		return err
 	}
 
-	_, err = client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return errorFromResponse(response)
 	}
 
 	return nil
@@ -490,9 +723,15 @@ func completeBuild(client *Client, ccmBaseUrl string, buildResultHandle RequestB
 		return err
 	}
 
-	_, err = client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return errorFromResponse(response)
 	}
 
 	return nil
@@ -570,6 +809,142 @@ func uploadFile(client *Client, ccmBaseUrl string, filepath string) (string, int
 	return uuid, s.Size(), sumInt, nil
 }
 
+type FullProjectAreaResultEnvelope struct {
+	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
+	Soap    FullProjectAreaResultBody
+}
+type FullProjectAreaResultBody struct {
+	XMLName  xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Body"`
+	Response FullProjectAreaResultResponse
+}
+type FullProjectAreaResultResponse struct {
+	XMLName     xml.Name `xml:"response"`
+	ReturnValue FullProjectAreaResultReturnValue
+}
+type FullProjectAreaResultReturnValue struct {
+	XMLName xml.Name `xml:"returnValue"`
+	Value   FullProjectAreaResultValue
+}
+type FullProjectAreaResultValue struct {
+	XMLName               xml.Name `xml:"value"`
+	FullProjectAreaResult *ProjectArea
+}
+type ProjectArea struct {
+	XMLName xml.Name `xml:"retrievedItems"`
+	ItemId  string   `xml:"itemId,attr"`
+	StateId string   `xml:"stateId"`
+}
+
+func findProjectStateId(client *Client, ccmBaseUrl string, projectUuid string) (string, error) {
+	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/service/com.ibm.team.repository.common.internal.IRepositoryRemoteService")
+	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
+
+	requestBody := fmt.Sprintf(fetchFullProjectAreaTemplate, projectUuid)
+
+	request, err := http.NewRequest("POST", requestBuildServiceUrl, strings.NewReader(requestBody))
+	if err != nil {
+		return "", err
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return "", errorFromResponse(response)
+	}
+
+	b, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return "", err
+	}
+
+	projectArea := &ProjectArea{}
+	fullProjectArea := &FullProjectAreaResultEnvelope{}
+	fullProjectArea.Soap.Response.ReturnValue.Value.FullProjectAreaResult = projectArea
+
+	err = xml.Unmarshal(b, fullProjectArea)
+	if err != nil {
+		return "", err
+	}
+
+	return projectArea.StateId, nil
+}
+
+func createBuildEngine(client *Client, ccmBaseUrl string, engineId string, projectUuid string, projectStateId string) (ItemHandle, error) {
+	engineHandle := ItemHandle{}
+
+	engineUuid := generateUUID()
+
+	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.build.internal.common.ITeamBuildService")
+	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
+
+	requestBody := fmt.Sprintf(createBuildEngineTemplate, engineUuid, engineId, projectUuid, projectStateId)
+
+	reader := strings.NewReader(requestBody)
+
+	request, err := http.NewRequest("POST", requestBuildServiceUrl, reader)
+	if err != nil {
+		return engineHandle, err
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return engineHandle, err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return engineHandle, errorFromResponse(response)
+	}
+
+	engineHandle, err = getBuildEngine(client, ccmBaseUrl, engineId)
+	if err != nil {
+		return engineHandle, err
+	}
+
+	return engineHandle, nil
+}
+
+func createBuildDefinition(client *Client, ccmBaseUrl string, buildDefId string, projectUuid string, projectStateId string, buildEngineUuid string) (ItemHandle, error) {
+	buildDefHandle := ItemHandle{}
+	buildDefUuid := generateUUID()
+
+	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.build.internal.common.ITeamBuildService")
+	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
+
+	requestBody := fmt.Sprintf(createBuildDefinitionTemplate, buildDefUuid, buildDefId, projectUuid, projectStateId, buildEngineUuid)
+
+	reader := strings.NewReader(requestBody)
+
+	request, err := http.NewRequest("POST", requestBuildServiceUrl, reader)
+	if err != nil {
+		return buildDefHandle, err
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return buildDefHandle, err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return buildDefHandle, errorFromResponse(response)
+	}
+
+	buildDefHandle, err = getBuildDefinition(client, ccmBaseUrl, buildDefId)
+	if err != nil {
+		return buildDefHandle, err
+	}
+
+	return buildDefHandle, nil
+}
+
 func buildDefaults() {
 	fmt.Printf("gojazz build [options] -run <build command>\n")
 	flag.PrintDefaults()
@@ -632,8 +1007,11 @@ func buildOp() {
 	scmLoad(client, ccmBaseUrl, projectName, status.metaData.workspaceId, status.metaData.isstream, userId, *sandboxPath, status, true)
 
 	// Find the build engine and build definition for the project
-	// TODO Create them if necessary
-	buildDefHandle, err := getBuildDefinition(client, ccmBaseUrl, projectName+" Default build")
+	project, err := client.findProject(projectName)
+	if err != nil {
+		panic(err)
+	}
+	projectStateId, err := findProjectStateId(client, ccmBaseUrl, project.ItemId)
 	if err != nil {
 		panic(err)
 	}
@@ -641,6 +1019,27 @@ func buildOp() {
 	buildEngineHandle, err := getBuildEngine(client, ccmBaseUrl, projectName+" Default engine")
 	if err != nil {
 		panic(err)
+	}
+
+	// Engine wasn't found, create a new one now with default settings
+	if buildEngineHandle.ItemId == "" {
+		buildEngineHandle, err = createBuildEngine(client, ccmBaseUrl, projectName+" Default engine", project.ItemId, projectStateId)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	buildDefHandle, err := getBuildDefinition(client, ccmBaseUrl, projectName+" Default build")
+	if err != nil {
+		panic(err)
+	}
+
+	// Build definition wasn't found. Create one and link it to the build engine.
+	if buildDefHandle.ItemId == "" {
+		buildDefHandle, err = createBuildDefinition(client, ccmBaseUrl, projectName+" Default build", project.ItemId, projectStateId, buildEngineHandle.ItemId)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Start the build
@@ -651,6 +1050,9 @@ func buildOp() {
 	}
 
 	buildUrl := ccmBaseUrl + "/web/projects/" + projectName + "#action=com.ibm.team.build.viewDefinition&id=" + buildDefHandle.ItemId
+	buildUrl = url.QueryEscape(buildUrl)
+	buildUrl = strings.Replace(buildUrl, "+", "%20", -1)
+	buildUrl = "https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=" + buildUrl
 	fmt.Printf("Access the build status here:\n%v\n", buildUrl)
 
 	// Update the build result with the build label and whether this is a personal build
