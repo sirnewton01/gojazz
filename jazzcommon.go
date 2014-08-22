@@ -8,7 +8,7 @@ import (
 const encodeURL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 func generateUUID() string {
-	src := rand.NewSource(time.Now().Unix())
+	src := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(src)
 
 	uuid := make([]byte, 16)
@@ -32,27 +32,19 @@ func generateUUID() string {
 	// Adjustment between Unix epoch and September 15, 1582
 	epoch_adjustment := time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC).Unix() - time.Date(1582, time.September, 15, 0, 0, 0, 0, time.UTC).Unix()
 
-	currentTime := time.Now().Unix() + epoch_adjustment
+	currentTime := time.Now().UnixNano() + epoch_adjustment
 	currentTime *= 10000
 	currentTime |= 0x1000000000000000
 
-	// Place the time into the byte array in network byte order.
-	//
 	for i := 0; i < 4; i++ {
-		// time_low
-		//
 		uuid[i] = byte(currentTime >> uint(8*(3-i)) & 0xFF)
 	}
 
 	for i := 0; i < 2; i++ {
-		// time_mid
-		//
 		uuid[i+4] = byte(currentTime >> uint(8*(1-i)+32) & 0xFF)
 	}
 
 	for i := 0; i < 2; i++ {
-		// time_hi
-		//
 		uuid[i+6] = byte(currentTime >> uint(8*(1-i)+48) & 0xFF)
 	}
 
@@ -65,8 +57,6 @@ func generateUUID() string {
 		buffer[4*i+4] = encodeURL[uuid[i*3+2]&0x3F]
 	}
 
-	// Handle the last byte at the end.
-	//
 	buffer[21] = encodeURL[(uuid[15]>>2)&0x3F]
 	buffer[22] = encodeURL[(uuid[15]<<4)&0x30]
 

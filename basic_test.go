@@ -796,7 +796,7 @@ func TestModificationSameContents(t *testing.T) {
 	}
 }
 
-func testCheckins(t *testing.T) {
+func TestCheckins(t *testing.T) {
 	projectName := "sirnewton | gojazz-test2"
 	cleanWorkspace(projectName)
 
@@ -1012,5 +1012,20 @@ func testCheckins(t *testing.T) {
 	}
 	if !status.unchanged() {
 		t.Errorf("Checkin left some unchecked-in changes")
+	}
+}
+
+func TestUUIDUniqueness(t *testing.T) {
+	idMap := make(map[string]bool)
+
+	for i := 0; i < 100000; i++ {
+		uuid := generateUUID()
+		_, ok := idMap[uuid]
+		if !ok {
+			idMap[uuid] = true
+		} else {
+			t.Errorf("Duplicate UUID: %v", uuid)
+			break
+		}
 	}
 }

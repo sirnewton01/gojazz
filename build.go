@@ -206,7 +206,7 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexArrayDataArg">
 				<type>COMPLEX</type>
 				<values xsi:type="build:BuildResultContribution">
-					<label>output.log</label>
+					<label>%s</label>
 					<contributionStatus>OK</contributionStatus>
 					<impactsPrimaryResult>true</impactsPrimaryResult>
 					<extendedContributionTypeId>com.ibm.team.build.common.model.IBuildResultContribution.log</extendedContributionTypeId>
@@ -499,17 +499,23 @@ func completeBuild(client *Client, ccmBaseUrl string, buildResultHandle RequestB
 	return nil
 }
 
-func publishLog(client *Client, ccmBaseUrl string, buildResultHandle RequestBuildResultHandle, fileName string, contentId string, contentLength int64, contentHash int64) error {
+func publishLog(client *Client, ccmBaseUrl string, buildResultHandle RequestBuildResultHandle, fileName string, label string, contentId string, contentLength int64, contentHash int64) error {
 	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.build.internal.common.ITeamBuildService")
 	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
-	request, err := http.NewRequest("POST", requestBuildServiceUrl, strings.NewReader(fmt.Sprintf(publishLogTemplate, buildResultHandle.ItemId, contentId, contentLength, contentHash, fileName)))
+	request, err := http.NewRequest("POST", requestBuildServiceUrl, strings.NewReader(fmt.Sprintf(publishLogTemplate, buildResultHandle.ItemId, label, contentId, contentLength, contentHash, fileName)))
 	if err != nil {
 		return err
 	}
 
-	_, err = client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return errorFromResponse(response)
 	}
 
 	return nil
@@ -532,6 +538,10 @@ func uploadFile(client *Client, ccmBaseUrl string, filepath string) (string, int
 	sumInt := int64(sum[0])<<(8*3) | int64(sum[1])<<(8*2) | int64(sum[2])<<(8*1) | int64(sum[3])
 
 	file, err = os.Open(filepath)
+	if err != nil {
+		return "", -1, -1, err
+	}
+	defer file.Close()
 
 	uploadFileServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.repository.common.transport.IDirectWritingContentService", uuid, strconv.FormatInt(sumInt, 10))
 	uploadFileServiceUrl = strings.Replace(uploadFileServiceUrl, ":/", "://", 1)
@@ -548,10 +558,14 @@ func uploadFile(client *Client, ccmBaseUrl string, filepath string) (string, int
 
 	request.ContentLength = s.Size()
 
-	_, err = client.Do(request)
-	file.Close()
+	response, err := client.Do(request)
 	if err != nil {
 		return "", -1, -1, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return "", -1, -1, errorFromResponse(response)
 	}
 
 	return uuid, s.Size(), sumInt, nil
@@ -591,7 +605,7 @@ func buildOp() {
 		path = findSandbox(path)
 		sandboxPath = &path
 	}
-	
+
 	// TODO explain to the user what's going on and the progress
 
 	status, _ := scmStatus(*sandboxPath, NO_COPY)
@@ -660,19 +674,30 @@ func buildOp() {
 	if err != nil {
 		panic(err)
 	}
+
 	outputFile, err := ioutil.TempFile(os.TempDir(), "gojazz-build-output")
 	if err != nil {
 		panic(err)
 	}
-	errorFile, err := ioutil.TempFile(os.TempDir(), "gojazz-build-error")
-	if err != nil {
-		panic(err)
-	}
+
 	cmd.Stdout = outputFile
-	cmd.Stderr = errorFile
-	err = cmd.Run()
+	cmd.Stderr = outputFile
+
+	// TODO Fix the case where the command could not be found, provide the error output
+	outputFile.Write([]byte(fmt.Sprintf("BEGIN BUILD: %v\n", buildResult.Label)))
+	hostname, err := os.Hostname()
+	if err == nil {
+		outputFile.Write([]byte(fmt.Sprintf("HOSTNAME: %v\n", hostname)))
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		outputFile.Write([]byte(fmt.Sprintf("CWD: %v\n", cwd)))
+	}
+	outputFile.Write([]byte(fmt.Sprintf("%v\n", strings.Join(buildCommands, " "))))
+	cmd.Run()
+	outputFile.Write([]byte("END BUILD\n"))
 	outputFile.Close()
-	errorFile.Close()
+	defer os.Remove(outputFile.Name())
 
 	isError := !cmd.ProcessState.Success()
 
@@ -681,16 +706,7 @@ func buildOp() {
 	if err != nil {
 		panic(err)
 	}
-	err = publishLog(client, ccmBaseUrl, buildResultHandle, "stdout.txt", contentId, contentLength, contentHash)
-	if err != nil {
-		panic(err)
-	}
-
-	contentId, contentLength, contentHash, err = uploadFile(client, ccmBaseUrl, errorFile.Name())
-	if err != nil {
-		panic(err)
-	}
-	err = publishLog(client, ccmBaseUrl, buildResultHandle, "stderr.txt", contentId, contentLength, contentHash)
+	err = publishLog(client, ccmBaseUrl, buildResultHandle, "output.txt", "Build Output Log", contentId, contentLength, contentHash)
 	if err != nil {
 		panic(err)
 	}
