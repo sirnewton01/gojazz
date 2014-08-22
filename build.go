@@ -946,14 +946,14 @@ func createBuildDefinition(client *Client, ccmBaseUrl string, buildDefId string,
 }
 
 func buildDefaults() {
-	fmt.Printf("gojazz build [options] -run <build command>\n")
+	fmt.Printf("gojazz build [options] -- <build command>\n")
 	flag.PrintDefaults()
 }
 
 func buildOp() {
 	commandIndex := -1
 	for idx, arg := range os.Args {
-		if arg == "-run" {
+		if arg == "--" {
 			commandIndex = idx
 		}
 	}
