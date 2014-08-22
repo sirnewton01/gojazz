@@ -572,7 +572,7 @@ func uploadFile(client *Client, ccmBaseUrl string, filepath string) (string, int
 }
 
 func buildDefaults() {
-	fmt.Printf("gojazz build [options] -run build command\n")
+	fmt.Printf("gojazz build [options] -run <build command>\n")
 	flag.PrintDefaults()
 }
 
@@ -606,8 +606,6 @@ func buildOp() {
 		sandboxPath = &path
 	}
 
-	// TODO explain to the user what's going on and the progress
-
 	status, _ := scmStatus(*sandboxPath, NO_COPY)
 	if status == nil {
 		// No sandbox here, fail
@@ -631,6 +629,7 @@ func buildOp() {
 		panic(err)
 	}
 
+	fmt.Printf("Loading the latest changes into the build sandbox...\n")
 	scmLoad(client, ccmBaseUrl, projectName, status.metaData.workspaceId, status.metaData.isstream, userId, *sandboxPath, status, true)
 
 	// Find the build engine and build definition for the project
@@ -646,6 +645,7 @@ func buildOp() {
 	}
 
 	// Start the build
+	fmt.Printf("Starting the build...\n")
 	buildResultHandle, err := startBuild(client, ccmBaseUrl, buildDefHandle, buildEngineHandle)
 	if err != nil {
 		panic(err)
@@ -653,7 +653,7 @@ func buildOp() {
 
 	// FIXME this url doesn't seem to be working
 	buildUrl := ccmBaseUrl + "/web/projects/" + projectName + "#action=com.ibm.team.build.viewResult&id=" + buildResultHandle.ItemId
-	fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(buildUrl))
+	fmt.Printf("Access the build status here:\nhttps://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(buildUrl))
 
 	// Update the build result with the build label and whether this is a personal build
 	buildResult, err := fetchFullBuildResult(client, ccmBaseUrl, buildResultHandle)
@@ -680,10 +680,17 @@ func buildOp() {
 		panic(err)
 	}
 
-	cmd.Stdout = outputFile
-	cmd.Stderr = outputFile
+	// Multiplex the output from the command to the log file and
+	//  standard out/err
+	stdouttee := io.MultiWriter(outputFile, os.Stdout)
+	stderrtee := io.MultiWriter(outputFile, os.Stderr)
 
-	// TODO Fix the case where the command could not be found, provide the error output
+	cmd.Stdout = stdouttee
+	cmd.Stderr = stderrtee
+
+	isError := false
+
+	fmt.Printf("Running the build command...\n.")
 	outputFile.Write([]byte(fmt.Sprintf("BEGIN BUILD: %v\n", buildResult.Label)))
 	hostname, err := os.Hostname()
 	if err == nil {
@@ -694,14 +701,22 @@ func buildOp() {
 		outputFile.Write([]byte(fmt.Sprintf("CWD: %v\n", cwd)))
 	}
 	outputFile.Write([]byte(fmt.Sprintf("%v\n", strings.Join(buildCommands, " "))))
-	cmd.Run()
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("%v\n", err.Error())
+		outputFile.Write([]byte(fmt.Sprintf("%v\n", err.Error())))
+		isError = true
+	}
 	outputFile.Write([]byte("END BUILD\n"))
 	outputFile.Close()
 	defer os.Remove(outputFile.Name())
 
-	isError := !cmd.ProcessState.Success()
+	if !isError && cmd.ProcessState != nil {
+		isError = !cmd.ProcessState.Success()
+	}
 
 	// Upload the output log
+	fmt.Printf("Publishing the build log...\n")
 	contentId, contentLength, contentHash, err := uploadFile(client, ccmBaseUrl, outputFile.Name())
 	if err != nil {
 		panic(err)
@@ -711,6 +726,7 @@ func buildOp() {
 		panic(err)
 	}
 
+	fmt.Printf("Updating the build status...\n")
 	if isError {
 		// Update the build result with the the final status
 		buildResult, err = fetchFullBuildResult(client, ccmBaseUrl, buildResultHandle)
