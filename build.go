@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -651,9 +650,8 @@ func buildOp() {
 		panic(err)
 	}
 
-	// FIXME this url doesn't seem to be working
-	buildUrl := ccmBaseUrl + "/web/projects/" + projectName + "#action=com.ibm.team.build.viewResult&id=" + buildResultHandle.ItemId
-	fmt.Printf("Access the build status here:\nhttps://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(buildUrl))
+	buildUrl := ccmBaseUrl + "/web/projects/" + projectName + "#action=com.ibm.team.build.viewDefinition&id=" + buildDefHandle.ItemId
+	fmt.Printf("Access the build status here:\n%v\n", buildUrl)
 
 	// Update the build result with the build label and whether this is a personal build
 	buildResult, err := fetchFullBuildResult(client, ccmBaseUrl, buildResultHandle)
@@ -746,4 +744,6 @@ func buildOp() {
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Printf("Access the build status here:\n%v\n", buildUrl)
 }
