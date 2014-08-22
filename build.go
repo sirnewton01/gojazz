@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -590,6 +591,8 @@ func buildOp() {
 		path = findSandbox(path)
 		sandboxPath = &path
 	}
+	
+	// TODO explain to the user what's going on and the progress
 
 	status, _ := scmStatus(*sandboxPath, NO_COPY)
 	if status == nil {
@@ -634,6 +637,10 @@ func buildOp() {
 		panic(err)
 	}
 
+	// FIXME this url doesn't seem to be working
+	buildUrl := ccmBaseUrl + "/web/projects/" + projectName + "#action=com.ibm.team.build.viewResult&id=" + buildResultHandle.ItemId
+	fmt.Printf("https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=%v\n", url.QueryEscape(buildUrl))
+
 	// Update the build result with the build label and whether this is a personal build
 	buildResult, err := fetchFullBuildResult(client, ccmBaseUrl, buildResultHandle)
 	if err != nil {
@@ -666,9 +673,6 @@ func buildOp() {
 	err = cmd.Run()
 	outputFile.Close()
 	errorFile.Close()
-	if err != nil {
-		panic(err)
-	}
 
 	isError := !cmd.ProcessState.Success()
 
