@@ -102,6 +102,9 @@ func main() {
 	case "login":
 		os.Args = os.Args[1:]
 		loginOp()
+	case "build":
+		os.Args = os.Args[1:]
+		buildOp()
 	default:
 		fmt.Printf("Invalid subcommand '%v'. Available subcommands: 'load', 'status', 'sync' and 'login'\n", os.Args[1])
 	}
