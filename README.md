@@ -57,7 +57,7 @@ your repository workspace. As a rule of thumb, you should sync whenever you make
 
 ## Build
 
-Gojazz also helps you to record the results of automated builds. Once you have loaded a stream into a sandbox you can use the build command to run your regular build tool and upload the status and log to your project on IBM DevOps Services.It's best to use a separate sandbox, account or even VM to run your automated tests.
+Gojazz also helps you to record the results of automated builds. Once you have loaded a stream into a sandbox you can use the build command to run your regular build tool and upload the status and log to your project on IBM DevOps Services.It's best to use a separate sandbox, account or even VM to run your automated build.
 
 `gojazz load "sirnewton | test"`
 
