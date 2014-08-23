@@ -18,6 +18,7 @@ project please try one of Jazz SCM client from jazz.net/downloads.
 +  Load the contents of your personal repository workspace for projects
 +  Synchronize your local changes with your repository workspace (EXPERIMENTAL)
 +  Incremental load, downloading only the changed files in your stream or repository workspace
++  Build/test your code while automatically uploading the results to your project
 
 ## Examples
 
@@ -53,6 +54,17 @@ Gojazz commands will give you the URL to access your repository workspace.
 Run the "sync" command on your sandbox often. It will make sure that your
 changes are backed up and it will make sure that you are up-to-date with
 your repository workspace. As a rule of thumb, you should sync whenever you make changes to your sandbox or when you make changes to your repository workspace on the website.
+
+## Build
+
+Gojazz also helps you to record the results of automated builds. Once you have loaded a stream into a sandbox you can use the build command to run your regular build tool and upload the status and log to your project on IBM DevOps Services.It's best to use a separate sandbox, account or even VM to run your automated tests.
+
+`gojazz load "sirnewton | test"
+gojazz build -- make`
+
+The load command will download the stream for the test project into a sandbox. The build command will automatically update that sandbox and run the command provided after the "--." This is the normal command-line that you would use to build and/or test your code (e.g. make, maven). If the command returns a non-zero value then the build is considered to be an error, otherwise it is a pass. All output from running the command is captured and stored in the result stored on IBM DevOps Services. Once the process is complete Gojazz will give you the URL to access your build results.
+
+To run a build on a schedule you can put the Gojazz build command in a cron job or similar.
 
 ## Supported Platforms
 
