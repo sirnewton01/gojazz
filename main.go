@@ -32,7 +32,7 @@ func simpleWarning(msg string) *JazzError {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Printf("No subcommand provided. Available subcommands: 'load', 'status', 'sync' and 'login'\n")
+		fmt.Printf("No subcommand provided. Available subcommands: 'load', 'status', 'sync', 'build' and 'login'\n")
 		return
 	}
 
@@ -106,6 +106,6 @@ func main() {
 		os.Args = os.Args[1:]
 		buildOp()
 	default:
-		fmt.Printf("Invalid subcommand '%v'. Available subcommands: 'load', 'status', 'sync' and 'login'\n", os.Args[1])
+		fmt.Printf("Invalid subcommand '%v'. Available subcommands: 'load', 'status', 'sync', 'build' and 'login'\n", os.Args[1])
 	}
 }
