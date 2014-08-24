@@ -73,5 +73,5 @@ Linux, Mac OS
 
 ## Downloads
 
-You can [download](https://login.jazz.net/psso/proxy/jazzlogin?redirect_uri=https%3A%2F%2Fhub.jazz.net%2Fccm04%2Fweb%2Fprojects%2Fsirnewton%20%7C%20gojazz%23action%3Dcom.ibm.team.build.viewDefinition%26id%3D_VwuOYL_IvO21rKYNjWNf8Q) the latest build of gojazz for Mac (aka. Darwin) and Linux 32-bit and 64-bit (amd64).
+You can [download](https://hub.jazz.net/ccm04/web/projects/sirnewton%20|%20gojazz#action=com.ibm.team.build.viewDefinition&id=_VwuOYL_IvO21rKYNjWNf8Q) the latest build of gojazz for Mac (aka. Darwin) and Linux 32-bit and 64-bit (amd64).
 
