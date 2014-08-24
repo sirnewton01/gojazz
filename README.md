@@ -12,6 +12,9 @@ of the standard Jazz SCM clients. Notable omissions include symbolic links,
 platform-specific conversions of line terminators and the ability to script all of the SCM operations (e.g. accept, deliver). If it is not suitable for your
 project please try one of Jazz SCM client from jazz.net/downloads.
 
+Check out the youtube videos:
+* [Intro](https://www.youtube.com/watch?v=8YVGOBX2--E)
+
 ## Features
 
 +  Load the latest contents of a stream (no authentication required for public projects)
