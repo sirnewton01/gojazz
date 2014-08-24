@@ -1018,7 +1018,7 @@ func TestCheckins(t *testing.T) {
 func TestUUIDUniqueness(t *testing.T) {
 	idMap := make(map[string]bool)
 
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000000; i++ {
 		uuid := generateUUID()
 		_, ok := idMap[uuid]
 		if !ok {

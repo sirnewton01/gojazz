@@ -2,13 +2,29 @@ package main
 
 import (
 	"math/rand"
+	"sync"
 	"time"
 )
 
 const encodeURL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
+var (
+	nano      = int64(0)
+	nanoMutex = &sync.Mutex{}
+)
+
 func generateUUID() string {
-	src := rand.NewSource(time.Now().UnixNano())
+	newNano := time.Now().UnixNano()
+
+	// Avoid duplicate nanoseconds
+	nanoMutex.Lock()
+	if newNano <= nano {
+		newNano = nano + 1
+	}
+	nano = newNano
+	nanoMutex.Unlock()
+
+	src := rand.NewSource(newNano)
 	r := rand.New(src)
 
 	uuid := make([]byte, 16)
@@ -32,7 +48,7 @@ func generateUUID() string {
 	// Adjustment between Unix epoch and September 15, 1582
 	epoch_adjustment := time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC).Unix() - time.Date(1582, time.September, 15, 0, 0, 0, 0, time.UTC).Unix()
 
-	currentTime := time.Now().UnixNano() + epoch_adjustment
+	currentTime := newNano + epoch_adjustment
 	currentTime *= 10000
 	currentTime |= 0x1000000000000000
 
