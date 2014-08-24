@@ -1105,13 +1105,19 @@ func buildOp() {
 		sandboxPath = &path
 	}
 
-	status, _ := scmStatus(*sandboxPath, NO_COPY)
-	if status == nil {
-		// No sandbox here, fail
-		panic(simpleWarning("Sorry, there is no source code here to build. Run 'gojazz load' first to load the project's stream."))
-	}
+	// Hack to allow bootstrapping of non-Jazz SCM projects
+	projectName := os.Getenv("GOJAZZ_PROJECT")
+	var status *status = nil
 
-	projectName := status.metaData.projectName
+	if projectName == "" {
+		status, _ = scmStatus(*sandboxPath, NO_COPY)
+		if status == nil {
+			// No sandbox here, fail
+			panic(simpleWarning("Sorry, there is no source code here to build. Run 'gojazz load' first to load the project's stream."))
+		}
+
+		projectName = status.metaData.projectName
+	}
 
 	userId, password, err := getCredentials()
 	if err != nil {
@@ -1128,8 +1134,10 @@ func buildOp() {
 		panic(err)
 	}
 
-	fmt.Printf("Loading the latest changes into the build sandbox...\n")
-	scmLoad(client, ccmBaseUrl, projectName, status.metaData.workspaceId, status.metaData.isstream, userId, *sandboxPath, status, true)
+	if status != nil {
+		fmt.Printf("Loading the latest changes into the build sandbox...\n")
+		scmLoad(client, ccmBaseUrl, projectName, status.metaData.workspaceId, status.metaData.isstream, userId, *sandboxPath, status, true)
+	}
 
 	// Find the build engine and build definition for the project
 	project, err := client.findProject(projectName)
@@ -1187,7 +1195,7 @@ func buildOp() {
 	}
 
 	buildResult.Label = time.Now().Format("20060102-1504")
-	buildResult.PersonalBuild = !status.metaData.isstream
+	buildResult.PersonalBuild = status != nil && !status.metaData.isstream
 
 	err = saveFullBuildResult(client, ccmBaseUrl, buildResult)
 	if err != nil {
