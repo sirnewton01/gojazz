@@ -171,32 +171,33 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 		}
 
 		if !info.IsDir() {
-			// Check the modified time
-			if meta.LastModified != info.ModTime().Unix() {
-				// Different sizes mean that the file has changed for sure
-				if meta.Size != info.Size() {
+			// The modified time is not a good enough check to see if the
+			//  file is modified or not.
+			//if meta.LastModified != info.ModTime().Unix() {
+			// Different sizes mean that the file has changed for sure
+			if meta.Size != info.Size() {
+				status.fileModified(meta, path, sandboxPath)
+			} else {
+				// Check the hashes
+				file, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+
+				hash := sha1.New()
+				_, err = io.Copy(hash, file)
+
+				if err != nil {
+					return err
+				}
+
+				newHash := base64.StdEncoding.EncodeToString(hash.Sum(nil))
+
+				if meta.Hash != newHash {
 					status.fileModified(meta, path, sandboxPath)
-				} else {
-					// Check the hashes
-					file, err := os.Open(path)
-					if err != nil {
-						return err
-					}
-
-					hash := sha1.New()
-					_, err = io.Copy(hash, file)
-
-					if err != nil {
-						return err
-					}
-
-					newHash := base64.StdEncoding.EncodeToString(hash.Sum(nil))
-
-					if meta.Hash != newHash {
-						status.fileModified(meta, path, sandboxPath)
-					}
 				}
 			}
+			//}
 		}
 
 		return nil
