@@ -21,7 +21,7 @@ Check out the youtube videos:
 +  Load the contents of your personal repository workspace for projects
 +  Synchronize your local changes with your repository workspace (EXPERIMENTAL)
 +  Incremental load, downloading only the changed files in your stream or repository workspace
-+  Build/test your code while automatically uploading the results to your project
++  Build/test your code while automatically uploading the results to your project (EXPERIMENTAL)
 
 ## Examples
 
