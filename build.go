@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -215,7 +216,55 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 						<contentId>%s</contentId>
 						<contentLength>%v</contentLength>
 						<characterEncoding xsi:nil="true"/>
-						<contentType>text/plain</contentType>
+						<contentType>%v</contentType>
+						<checksum>%v</checksum>
+						<lineDelimiterSetting>0</lineDelimiterSetting>
+						<lineDelimiterCount>0</lineDelimiterCount>
+					</extendedContributionData>
+					<extendedContributionProperties>
+						<name>com.ibm.team.build.common.model.IBuildResultContribution.fileName</name>
+						<value>%s</value>
+					</extendedContributionProperties>
+				</values>
+			</parameters>
+			<parameters xsi:type="com.ibm.team.repository.common.services:PrimitiveArrayDataArg">
+				<type>STRING</type>
+			</parameters>
+		</request>
+	</soapenv:Body>
+</soapenv:Envelope>
+`
+
+	publishArtifactTemplate = `<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+	xmlns:com.ibm.team.repository.common.services="http:///com/ibm/team/core/services.ecore"
+	xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+	xmlns:repository="com.ibm.team.repository"
+	xmlns:build="com.ibm.team.build"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<soapenv:Body>
+		<request>
+			<method>addBuildResultContributions</method>
+			<interface>com.ibm.team.build.internal.common.ITeamBuildService</interface>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexDataArg">
+				<type>COMPLEX</type>
+				<value xsi:type="build:BuildResultHandle" itemId="%s">
+					<stateId xsi:nil="true"/>
+				</value>
+			</parameters>
+			<parameters xsi:type="com.ibm.team.repository.common.services:ComplexArrayDataArg">
+				<type>COMPLEX</type>
+				<values xsi:type="build:BuildResultContribution">
+					<label>%s</label>
+					<contributionStatus>OK</contributionStatus>
+					<impactsPrimaryResult>true</impactsPrimaryResult>
+					<extendedContributionTypeId>com.ibm.team.build.common.model.IBuildResultContribution.artifact</extendedContributionTypeId>
+					<extendedContributionData>
+						<deltaPredecessor xsi:nil="true"/>
+						<contentId>%s</contentId>
+						<contentLength>%v</contentLength>
+						<characterEncoding xsi:nil="true"/>
+						<contentType>%v</contentType>
 						<checksum>%v</checksum>
 						<lineDelimiterSetting>0</lineDelimiterSetting>
 						<lineDelimiterCount>0</lineDelimiterCount>
@@ -737,10 +786,10 @@ func completeBuild(client *Client, ccmBaseUrl string, buildResultHandle RequestB
 	return nil
 }
 
-func publishLog(client *Client, ccmBaseUrl string, buildResultHandle RequestBuildResultHandle, fileName string, label string, contentId string, contentLength int64, contentHash int64) error {
+func publishLog(client *Client, ccmBaseUrl string, buildResultHandle RequestBuildResultHandle, fileName string, label string, contentId string, contentLength int64, contentType string, contentHash int64) error {
 	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.build.internal.common.ITeamBuildService")
 	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
-	request, err := http.NewRequest("POST", requestBuildServiceUrl, strings.NewReader(fmt.Sprintf(publishLogTemplate, buildResultHandle.ItemId, label, contentId, contentLength, contentHash, fileName)))
+	request, err := http.NewRequest("POST", requestBuildServiceUrl, strings.NewReader(fmt.Sprintf(publishLogTemplate, buildResultHandle.ItemId, label, contentId, contentLength, contentType, contentHash, fileName)))
 	if err != nil {
 		return err
 	}
@@ -759,7 +808,32 @@ func publishLog(client *Client, ccmBaseUrl string, buildResultHandle RequestBuil
 	return nil
 }
 
-func uploadFile(client *Client, ccmBaseUrl string, filepath string) (string, int64, int64, error) {
+func publishArtifact(client *Client, ccmBaseUrl string, buildResultHandle RequestBuildResultHandle, fileName string, label string, contentId string, contentLength int64, contentType string, contentHash int64) error {
+	requestBuildServiceUrl := path.Join(ccmBaseUrl, "/team/service/com.ibm.team.build.internal.common.ITeamBuildService")
+	requestBuildServiceUrl = strings.Replace(requestBuildServiceUrl, ":/", "://", 1)
+
+	requestBody := fmt.Sprintf(publishArtifactTemplate, buildResultHandle.ItemId, label, contentId, contentLength, contentType, contentHash, fileName)
+
+	request, err := http.NewRequest("POST", requestBuildServiceUrl, strings.NewReader(requestBody))
+	if err != nil {
+		return err
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return errorFromResponse(response)
+	}
+
+	return nil
+}
+
+func uploadFile(client *Client, ccmBaseUrl string, filepath string, contentType string) (string, int64, int64, error) {
 	uuid := generateUUID()
 	file, err := os.Open(filepath)
 	if err != nil {
@@ -787,7 +861,7 @@ func uploadFile(client *Client, ccmBaseUrl string, filepath string) (string, int
 	if err != nil {
 		return "", -1, -1, err
 	}
-	request.Header.Add("Content-Type", "text/plain")
+	request.Header.Add("Content-Type", contentType)
 
 	s, err := os.Stat(file.Name())
 	if err != nil {
@@ -945,6 +1019,57 @@ func createBuildDefinition(client *Client, ccmBaseUrl string, buildDefId string,
 	return buildDefHandle, nil
 }
 
+func findArtifactsForDownload(sandboxPath string, projectName string, buildBeginTime time.Time) ([]string, error) {
+	// The heuristic is to use the project name to find files that contain
+	//  the name that have been created since the build begin time and have
+	//  typical file extensions (e.g. exe, dll, so, zip, jar) or are executable.
+
+	s, err := os.Open(sandboxPath)
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+
+	fi, err := s.Readdir(-1)
+	if err != nil {
+		return nil, err
+	}
+
+	projectComponents := strings.Split(projectName, " | ")
+	projectName = projectComponents[1]
+
+	artifacts := make([]string, 0)
+
+	for _, info := range fi {
+		// 10 Artifact limit (for now)
+		if len(artifacts) >= 10 {
+			break
+		}
+
+		if info.IsDir() || info.ModTime().Before(buildBeginTime) {
+			continue
+		}
+
+		base := filepath.Base(info.Name())
+
+		if !strings.Contains(base, projectName) {
+			continue
+		}
+
+		if (info.Mode() & 0100) != 0 {
+			artifacts = append(artifacts, info.Name())
+			continue
+		}
+
+		if strings.HasSuffix(base, ".exe") || strings.HasSuffix(base, ".dll") || strings.HasSuffix(base, ".so") || strings.HasSuffix(base, ".zip") || strings.HasSuffix(base, ".jar") {
+			artifacts = append(artifacts, info.Name())
+			continue
+		}
+	}
+
+	return artifacts, nil
+}
+
 func buildDefaults() {
 	fmt.Printf("gojazz build [options] -- <build command>\n")
 	flag.PrintDefaults()
@@ -1090,6 +1215,8 @@ func buildOp() {
 
 	isError := false
 
+	buildBeginTime := time.Now()
+
 	fmt.Printf("Running the build command...\n.")
 	outputFile.Write([]byte(fmt.Sprintf("BEGIN BUILD: %v\n", buildResult.Label)))
 	hostname, err := os.Hostname()
@@ -1117,13 +1244,34 @@ func buildOp() {
 
 	// Upload the output log
 	fmt.Printf("Publishing the build log...\n")
-	contentId, contentLength, contentHash, err := uploadFile(client, ccmBaseUrl, outputFile.Name())
+	contentId, contentLength, contentHash, err := uploadFile(client, ccmBaseUrl, outputFile.Name(), "text/plain")
 	if err != nil {
 		panic(err)
 	}
-	err = publishLog(client, ccmBaseUrl, buildResultHandle, "output.txt", "Build Output Log", contentId, contentLength, contentHash)
+	err = publishLog(client, ccmBaseUrl, buildResultHandle, "output.txt", "Build Output Log", contentId, contentLength, "text/plain", contentHash)
 	if err != nil {
 		panic(err)
+	}
+
+	artifacts, err := findArtifactsForDownload(*sandboxPath, projectName, buildBeginTime)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(artifacts) > 0 {
+		fmt.Printf("Publishing artifacts for download...\n")
+	}
+
+	for _, artifact := range artifacts {
+		fmt.Printf(" %v\n", artifact)
+		contentId, contentLength, contentHash, err = uploadFile(client, ccmBaseUrl, artifact, "application/unknown")
+		if err != nil {
+			panic(err)
+		}
+		err = publishArtifact(client, ccmBaseUrl, buildResultHandle, filepath.Base(artifact), "Download", contentId, contentLength, "application/unknown", contentHash)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	fmt.Printf("Updating the build status...\n")
