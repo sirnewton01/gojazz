@@ -10,7 +10,7 @@ You can use the DevOps Services web site to use the rest of the SCM and manage y
 Gojazz should be suitable for many small to medium sized project. As a lightweight tool it lacks some of the more advanced "enterprise" features
 of the standard Jazz SCM clients. Notable omissions include symbolic links,
 platform-specific conversions of line terminators and the ability to script all of the SCM operations (e.g. accept, deliver). If it is not suitable for your
-project please try one of Jazz SCM client from jazz.net/downloads.
+project please try one of the official Jazz SCM client from jazz.net/downloads.
 
 Check out the youtube videos:
 * [Intro](https://www.youtube.com/watch?v=8YVGOBX2--E)
