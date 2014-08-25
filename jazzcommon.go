@@ -1,6 +1,7 @@
 package main
 
 import (
+	cr "crypto/rand"
 	"math/rand"
 	"sync"
 	"time"
@@ -11,7 +12,23 @@ const encodeURL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678
 var (
 	nano      = int64(0)
 	nanoMutex = &sync.Mutex{}
+
+	// Random number generator seed
+	seed = int64(0)
 )
+
+func init() {
+	// Generate a random seed
+	buf := make([]byte, 8)
+	_, err := cr.Read(buf)
+	if err != nil {
+		panic(err)
+	}
+
+	for i, b := range buf {
+		seed |= int64(b) << uint((7-i)*8)
+	}
+}
 
 func generateUUID() string {
 	newNano := time.Now().UnixNano()
@@ -24,7 +41,7 @@ func generateUUID() string {
 	nano = newNano
 	nanoMutex.Unlock()
 
-	src := rand.NewSource(newNano)
+	src := rand.NewSource(seed)
 	r := rand.New(src)
 
 	uuid := make([]byte, 16)
