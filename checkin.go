@@ -105,6 +105,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 		localpath := filepath.Join(sandboxPath, modifiedpath)
 		stagepath := filepath.Join(sandboxPath, stageFolder, modifiedpath)
+		remotepath := filepath.ToSlash(modifiedpath)
 
 		meta, ok := status.metaData.get(localpath, sandboxPath)
 		componentId := ""
@@ -115,14 +116,14 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 			componentId = meta.ComponentId
 		}
 
-		remoteFile, err := Open(client, ccmBaseUrl, workspaceId, componentId, modifiedpath)
+		remoteFile, err := Open(client, ccmBaseUrl, workspaceId, componentId, remotepath)
 		if err != nil {
 			// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
 			//  parent directories are not there.
 			fileerror, ok := err.(*JazzError)
 
 			if ok && fileerror.StatusCode == 404 {
-				fmt.Printf("Cannot check-in file at path %v since it no longer exists at the same location on the remote.\n", modifiedpath)
+				fmt.Printf("Cannot check-in file at path %v since it no longer exists at the same location on the remote.\n", remotepath)
 				fmt.Printf("The file has been temporarily backed up in the following location: %v\n", stagepath)
 				continue
 			}
@@ -163,6 +164,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		fmt.Printf("%v (Added)\n", addedpath)
 
 		localpath := filepath.Join(sandboxPath, addedpath)
+		remotepath := filepath.ToSlash(addedpath)
 
 		info, err := os.Stat(localpath)
 		if err != nil {
@@ -180,7 +182,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 		}
 
 		if info.IsDir() {
-			remoteFolder, err := Mkdir(client, ccmBaseUrl, workspaceId, componentId, addedpath)
+			remoteFolder, err := Mkdir(client, ccmBaseUrl, workspaceId, componentId, remotepath)
 			if err != nil {
 				// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
 				//  parent directories are not there.
@@ -188,14 +190,14 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 				if ok && fileerror.StatusCode == 404 {
 					// One last crack at this is to create all of the necessary parent directories and then add the file to it
-					parentDir := path.Dir(addedpath)
+					parentDir := path.Dir(remotepath)
 					_, err := MkdirAll(client, ccmBaseUrl, workspaceId, componentId, parentDir)
 					if err != nil {
 						panic(err)
 					}
 
 					// Try again now that the parent directory is there
-					remoteFolder, err = Mkdir(client, ccmBaseUrl, workspaceId, componentId, addedpath)
+					remoteFolder, err = Mkdir(client, ccmBaseUrl, workspaceId, componentId, remotepath)
 					if err != nil {
 						panic(err)
 					}
@@ -212,7 +214,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 			status.metaData.simplePut(meta, sandboxPath)
 		} else {
-			remoteFile, err := Create(client, ccmBaseUrl, workspaceId, componentId, addedpath)
+			remoteFile, err := Create(client, ccmBaseUrl, workspaceId, componentId, remotepath)
 			if err != nil {
 				// First, check to see if this is a 404 (Not Found). This can occur when one or more of the
 				//  parent directories are not there.
@@ -220,14 +222,14 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 				if ok && fileerror.StatusCode == 404 {
 					// One last crack at this is to create all of the necessary parent directories and then add the file to it
-					parentDir := path.Dir(addedpath)
+					parentDir := path.Dir(remotepath)
 					_, err := MkdirAll(client, ccmBaseUrl, workspaceId, componentId, parentDir)
 					if err != nil {
 						panic(err)
 					}
 
 					// Try again now that the parent directory is there
-					remoteFile, err = Create(client, ccmBaseUrl, workspaceId, componentId, addedpath)
+					remoteFile, err = Create(client, ccmBaseUrl, workspaceId, componentId, remotepath)
 					if err != nil {
 						panic(err)
 					}
@@ -254,6 +256,8 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 
 	for idx = len(deletedFiles) - 1; idx >= 0; idx-- {
 		deletedpath := deletedFiles[idx]
+		remotepath := filepath.ToSlash(deletedpath)
+
 		fmt.Printf("%v (Deleted)\n", deletedpath)
 		deletedpath = filepath.Join(sandboxPath, deletedpath)
 
@@ -272,7 +276,7 @@ func scmCheckin(client *Client, status *status, sandboxPath string) {
 			panic(err)
 		}
 
-		err = Remove(client, ccmBaseUrl, workspaceId, componentId, remotePath)
+		err = Remove(client, ccmBaseUrl, workspaceId, componentId, remotepath)
 		if err != nil {
 			// First, check to see if this is a 404 (Not Found). If the file is already deleted
 			//  then this is an acceptable resolution to the checkin. One reason it may be already

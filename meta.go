@@ -49,6 +49,8 @@ func newMetaData() *metaData {
 func (metadata *metaData) load(path string) error {
 	file, err := os.Open(path)
 	if err == nil {
+		defer file.Close()
+
 		decoder := gob.NewDecoder(file)
 		err = decoder.Decode(&metadata.isstream)
 		err = decoder.Decode(&metadata.ccmBaseUrl)
@@ -70,6 +72,8 @@ func (metadata *metaData) save(path string) error {
 
 	file, err := os.Create(path)
 	if err == nil {
+		defer file.Close()
+
 		encoder := gob.NewEncoder(file)
 		err = encoder.Encode(&metadata.isstream)
 		err = encoder.Encode(&metadata.ccmBaseUrl)

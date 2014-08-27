@@ -117,6 +117,8 @@ func TestLoadAndClobberChanges(t *testing.T) {
 
 	// Make adds and mods to the files
 	for _, file := range testContentsWithoutIgnoredStuff {
+		file = filepath.FromSlash(file)
+
 		path := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(path)
 		if s == nil {
@@ -128,11 +130,11 @@ func TestLoadAndClobberChanges(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer deleteMe.Close()
 			_, err = deleteMe.Write([]byte("test contents"))
 			if err != nil {
 				panic(err)
 			}
+			deleteMe.Close()
 
 			err = os.Mkdir(filepath.Join(path, "deleteMe"), 0700)
 			if err != nil {
@@ -143,12 +145,12 @@ func TestLoadAndClobberChanges(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer modFile.Close()
 
 			_, err = modFile.Write([]byte("new contents123"))
 			if err != nil {
 				panic(err)
 			}
+			modFile.Close()
 		}
 	}
 
@@ -161,11 +163,13 @@ func TestLoadAndClobberChanges(t *testing.T) {
 		t.Fatalf("%v", err.Error())
 	}
 	if !status.unchanged() {
-		t.Fail()
+		t.Errorf("Expected no changes to the sandbox, got these instead: %v\n", status)
 	}
 
 	// Check that all of the files and folders made their way into the backup
 	for _, file := range testContentsWithoutIgnoredStuff {
+		file = filepath.FromSlash(file)
+
 		path := filepath.Join(sandbox1, backupFolder, file)
 		s, _ := os.Stat(path)
 		if s == nil {
@@ -201,6 +205,8 @@ func TestAlternateStreamLoad(t *testing.T) {
 
 	// Verify that specific files show up
 	for _, file := range testContentsAlternate {
+		file = filepath.FromSlash(file)
+
 		p := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(p)
 		if s == nil {
@@ -227,6 +233,7 @@ func TestEmptyStreamLoad(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	defer f.Close()
 
 	names, err := f.Readdirnames(-1)
 	if err != nil {
@@ -271,6 +278,8 @@ func TestSwitchStreams(t *testing.T) {
 		"alternateFolder/anotherAlternateFile.txt",
 	}
 	for _, file := range filesToCheck {
+		file = filepath.FromSlash(file)
+
 		p := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(p)
 		if s == nil {
@@ -283,6 +292,8 @@ func TestSwitchStreams(t *testing.T) {
 		"folder/file1.txt", "README.md",
 	}
 	for _, file := range filesToCheck {
+		file = filepath.FromSlash(file)
+
 		p := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(p)
 		if s != nil {
@@ -416,6 +427,8 @@ func TestLoadWorkspace(t *testing.T) {
 
 	// Verify that specific files show up
 	for _, file := range testContents {
+		file = filepath.FromSlash(file)
+
 		p := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(p)
 		if s == nil {
@@ -444,6 +457,8 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 
 	// Make adds and mods to the files
 	for _, file := range testContentsWithoutIgnoredStuff {
+		file = filepath.FromSlash(file)
+
 		path := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(path)
 		if s == nil {
@@ -455,11 +470,11 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer deleteMe.Close()
 			_, err = deleteMe.Write([]byte("test contents"))
 			if err != nil {
 				panic(err)
 			}
+			deleteMe.Close()
 
 			err = os.Mkdir(filepath.Join(path, "deleteMe"), 0700)
 			if err != nil {
@@ -470,12 +485,12 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer modFile.Close()
 
 			_, err = modFile.Write([]byte("new contents123"))
 			if err != nil {
 				panic(err)
 			}
+			modFile.Close()
 		}
 	}
 
@@ -488,11 +503,13 @@ func TestWorkspaceLoadAndClobberChanges(t *testing.T) {
 		t.Fatalf("%v", err.Error())
 	}
 	if !status.unchanged() {
-		t.Fail()
+		t.Errorf("Expected no changes in the sandbox but saw these instead: %v\n", status)
 	}
 
 	// Check that all of the files and folders made their way into the backup
 	for _, file := range testContentsWithoutIgnoredStuff {
+		file = filepath.FromSlash(file)
+
 		path := filepath.Join(sandbox1, backupFolder, file)
 		s, _ := os.Stat(path)
 		if s == nil {
@@ -549,6 +566,8 @@ func TestLocalChangeDetection(t *testing.T) {
 	numChanges := 2
 
 	for _, file := range testContents {
+		file = filepath.FromSlash(file)
+
 		path := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(path)
 		if s == nil {
@@ -556,7 +575,7 @@ func TestLocalChangeDetection(t *testing.T) {
 			continue
 		}
 
-		if file == "folder/file1.txt" {
+		if file == filepath.FromSlash("folder/file1.txt") {
 			err := os.Remove(path)
 			if err != nil {
 				panic(err)
@@ -575,11 +594,11 @@ func TestLocalChangeDetection(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer added.Close()
 			_, err = added.Write([]byte("test contents"))
 			if err != nil {
 				panic(err)
 			}
+			added.Close()
 
 			err = os.Mkdir(filepath.Join(path, "added"), 0700)
 			if err != nil {
@@ -594,12 +613,12 @@ func TestLocalChangeDetection(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer modFile.Close()
 
 			_, err = modFile.Write([]byte("new contents123"))
 			if err != nil {
 				panic(err)
 			}
+			modFile.Close()
 
 			if !ignored {
 				numChanges += 1
@@ -631,7 +650,9 @@ func TestLocalChangeDetection(t *testing.T) {
 
 	// Check that all of the files and folders are reported in the status
 	for _, file := range testContentsWithoutIgnoredStuff {
-		if file == "folder/file1.txt" {
+		file = filepath.FromSlash(file)
+
+		if file == filepath.FromSlash("folder/file1.txt") {
 			_, found := status.Deleted[file]
 			if !found {
 				t.Errorf("Deletion expected but not found: %v", file)
@@ -704,7 +725,6 @@ func TestModificationSameSize(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer f.Close()
 	_, err = f.Write(buffer)
 	if err != nil {
 		panic(err)
@@ -832,6 +852,8 @@ func TestCheckins(t *testing.T) {
 	numChanges := 2
 
 	for _, file := range testContents {
+		file = filepath.FromSlash(file)
+
 		path := filepath.Join(sandbox1, file)
 		s, _ := os.Stat(path)
 		if s == nil {
@@ -839,7 +861,7 @@ func TestCheckins(t *testing.T) {
 			continue
 		}
 
-		if file == "folder/file1.txt" {
+		if file == filepath.FromSlash("folder/file1.txt") {
 			err := os.Remove(path)
 			if err != nil {
 				panic(err)
@@ -858,11 +880,11 @@ func TestCheckins(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer added.Close()
 			_, err = added.Write([]byte("test contents"))
 			if err != nil {
 				panic(err)
 			}
+			added.Close()
 
 			err = os.Mkdir(filepath.Join(path, "added"), 0700)
 			if err != nil {
@@ -877,12 +899,12 @@ func TestCheckins(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			defer modFile.Close()
 
 			_, err = modFile.Write([]byte("new contents123"))
 			if err != nil {
 				panic(err)
 			}
+			modFile.Close()
 
 			if !ignored {
 				numChanges += 1
@@ -943,22 +965,22 @@ func TestCheckins(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			defer f1.Close()
 			f2, err := os.Open(otherpath)
 			if err != nil {
 				return err
 			}
-			defer f2.Close()
 
 			f1Contents, err := ioutil.ReadAll(f1)
 			if err != nil {
 				return err
 			}
+			f1.Close()
 
 			f2Contents, err := ioutil.ReadAll(f2)
 			if err != nil {
 				return err
 			}
+			f2.Close()
 
 			if len(f1Contents) != len(f2Contents) {
 				t.Errorf("File %v has different contents.", relpath)

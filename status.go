@@ -183,6 +183,7 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 				if err != nil {
 					return err
 				}
+				defer file.Close()
 
 				hash := sha1.New()
 				_, err = io.Copy(hash, file)

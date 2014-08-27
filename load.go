@@ -410,9 +410,10 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 
 				scmInfo := remoteFile.info.ScmInfo
 				localPath := filepath.Join(sandbox, pathToDownload)
+				localSandboxPath := filepath.FromSlash(pathToDownload)
 
 				// Optimization: State ID is the same as last time and there were no local modifications
-				if status != nil && !status.Modified[pathToDownload] && !status.Deleted[pathToDownload] {
+				if status != nil && !status.Modified[localSandboxPath] && !status.Deleted[localSandboxPath] {
 					prevMeta, ok := status.metaData.get(localPath, sandbox)
 
 					if ok && prevMeta.StateId == scmInfo.StateId {

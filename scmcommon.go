@@ -848,7 +848,7 @@ func internalWalk(data walkData) error {
 	}
 
 	for _, childInfo := range f.info.Children {
-		p := filepath.Join(data.path, childInfo.Name)
+		p := path.Join(data.path, childInfo.Name)
 
 		childData := walkData{
 			client:       data.client,
