@@ -76,5 +76,5 @@ Linux, Mac OS, Windows (EXPERIMENTAL)
 
 ## Downloads
 
-You can [download](https://hub.jazz.net/ccm04/web/projects/sirnewton%20%7C%20gojazz#action=com.ibm.team.build.viewDefinition&id=_VwuOYL_IvO21rKYNjWNf8Q) the latest build of gojazz for Mac (aka. Darwin) and Linux 32-bit and 64-bit (amd64).
+You can [download](https://hub.jazz.net/ccm04/web/projects/sirnewton%20%7C%20gojazz#action=com.ibm.team.build.viewDefinition&id=_VwuOYL_IvO21rKYNjWNf8Q) the latest build of gojazz for Mac, Linux and Windows. All of the binaries are compiled for 64-bit.
 
