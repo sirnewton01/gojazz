@@ -72,7 +72,7 @@ To run a build on a schedule you can put the Gojazz build command in a cron job 
 
 ## Supported Platforms
 
-Linux, Mac OS
+Linux, Mac OS, Windows (EXPERIMENTAL)
 
 ## Downloads
 
