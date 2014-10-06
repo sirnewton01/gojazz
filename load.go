@@ -279,14 +279,14 @@ func scmLoad(client *Client, ccmBaseUrl string, projectName string, workspaceId 
 	os.Remove(metadataFile)
 
 	// Find all of the components of the remote workspace and then walk over each one
-	componentIds, err := FindComponentIds(client, ccmBaseUrl, workspaceId)
+	components, err := FindComponents(client, ccmBaseUrl, workspaceId)
 	if err != nil {
 		panic(err)
 	}
 
 	// Walk through the remote components creating directories, if necessary and cleaning up any deleted files
-	for _, componentId := range componentIds {
-		loadComponent(client, ccmBaseUrl, workspaceId, componentId, sandbox, newMetaData, status)
+	for _, component := range components {
+		loadComponent(client, ccmBaseUrl, workspaceId, component.ScmInfo.ItemId, sandbox, newMetaData, status)
 	}
 
 	// Do a final pass over the top-level elements in the sandbox
@@ -467,7 +467,7 @@ func loadComponent(client *Client, ccmBaseUrl string, workspaceId string, compon
 		go downloadFiles()
 	}
 
-	err := Walk(client, ccmBaseUrl, workspaceId, componentId, func(p string, file File) error {
+	err := Walk(client, ccmBaseUrl, workspaceId, componentId, newMetaData, func(p string, file File) error {
 		localPath := filepath.Join(sandbox, p)
 
 		if file.info.Directory {

@@ -47,18 +47,22 @@ func syncOp() {
 		panic(err)
 	}
 
-	scmCheckin(client, status, *sandboxPath)
+	doSyncOp(client, *sandboxPath, status, *force)
+}
+
+func doSyncOp(client *Client, sandboxPath string, status *status, force bool) {
+	scmCheckin(client, status, sandboxPath)
 
 	// Clear out all of the changes in the status before performing the load
 	status.Added = make(map[string]bool)
 	status.Modified = make(map[string]bool)
 	status.Deleted = make(map[string]bool)
 
-	scmLoad(client, status.metaData.ccmBaseUrl, status.metaData.projectName, status.metaData.workspaceId, status.metaData.isstream, status.metaData.userId, *sandboxPath, status, *force)
+	scmLoad(client, status.metaData.ccmBaseUrl, status.metaData.projectName, status.metaData.workspaceId, status.metaData.isstream, status.metaData.userId, sandboxPath, status, force)
 
 	// Force a load/reload of the jazzhub sandbox to avoid out of sync when
 	//  looking at the changes page
-	err = loadWorkspace(client, status.metaData.projectName, status.metaData.workspaceId)
+	err := loadWorkspace(client, status.metaData.projectName, status.metaData.workspaceId)
 	if err != nil {
 		panic(err)
 	}

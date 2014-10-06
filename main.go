@@ -105,7 +105,10 @@ func main() {
 	case "build":
 		os.Args = os.Args[1:]
 		buildOp()
+	case "autosync":
+		os.Args = os.Args[1:]
+		autosyncOp()
 	default:
-		fmt.Printf("Invalid subcommand '%v'. Available subcommands: 'load', 'status', 'sync', 'build' and 'login'\n", os.Args[1])
+		fmt.Printf("Invalid subcommand '%v'. Available subcommands: 'load', 'status', 'sync', 'autosync', 'build' and 'login'\n", os.Args[1])
 	}
 }
