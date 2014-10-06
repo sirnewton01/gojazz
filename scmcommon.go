@@ -19,6 +19,53 @@ const (
 	numWalkGoroutines = 10
 )
 
+type Path []string
+
+// Check if one path is a prefix of another
+func (p Path) isPrefixOf(other Path) bool {
+	if len(p) > len(other) {
+		return false
+	}
+
+	for idx, seg := range p {
+		if seg != other[idx] {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Convert a path to a string array, which also happens to be a Path.
+func pathToArray(p string) Path {
+	segments := make([]string, 0, 1)
+
+	dir := p
+
+	for {
+		for strings.HasSuffix(dir, "/") {
+			dir = dir[:len(dir)-1]
+		}
+
+		var name string
+		dir, name = path.Split(dir)
+		if "" == dir {
+			break
+		}
+
+		segments = append(segments, name)
+	}
+
+	// And now we reverse result...
+	result := make([]string, len(segments))
+
+	for idx, seg := range segments {
+		result[len(segments)-1-idx] = seg
+	}
+
+	return result
+}
+
 func findSandbox(startingPath string) (p string) {
 	_, err := os.Stat(startingPath)
 	if err != nil {
@@ -38,6 +85,11 @@ func findSandbox(startingPath string) (p string) {
 	}
 
 	return startingPath
+}
+
+func isSandbox(cwd string) bool {
+	_, err := os.Stat(filepath.Join(cwd, metadataFileName))
+	return err == nil
 }
 
 func FindRepositoryWorkspace(client *Client, ccmBaseUrl, workspaceName string) (string, error) {
@@ -723,12 +775,14 @@ type walkData struct {
 	workTracker  chan bool
 }
 
-func Walk(client *Client, ccmBaseUrl string, workspaceId string, componentId string, wf WalkFunc) error {
+func Walk(client *Client, ccmBaseUrl string, workspaceId string, componentId string, metadata *metaData, wf WalkFunc) error {
 	// Walk doesn't callback for the component root
 	root, err := Open(client, ccmBaseUrl, workspaceId, componentId, "/")
 	if err != nil {
 		return err
 	}
+
+	metadata.componentEtag[root.info.ScmInfo.ItemId] = root.etag
 
 	// We track the etag through this whole process to make sure that the configuration
 	//  doesn't change in the middle.

@@ -120,7 +120,15 @@ func statusOp() {
 	fmt.Printf("%v", status)
 }
 
+// Convenience call to scan the entire sandbox for changes.
 func scmStatus(sandboxPath string, m mode) (*status, error) {
+	return scmStatusSelectively(sandboxPath, nil, m)
+}
+
+// Search the local directory for changes. The scanRoots is an array of full paths
+// (ie not relative) within the sandboxPath. scanRoots may be 'nil', in which case
+// we search from the sandboxPath.
+func scmStatusSelectively(sandboxPath string, scanRoots *[]string, m mode) (*status, error) {
 	// Load up existing metadata and prepare fresh metadata
 	oldMetaData := newMetaData()
 	// If the load fails, it's not a problem, just empty
@@ -141,71 +149,77 @@ func scmStatus(sandboxPath string, m mode) (*status, error) {
 		}
 	}
 
+	if scanRoots == nil {
+		scanRoots = &[]string{sandboxPath}
+	}
+
 	// Walk the current directory structure looking for changed items
-	err = filepath.Walk(sandboxPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	for _, scanPath := range *scanRoots {
+		err = filepath.Walk(scanPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				// One of the errors we can receive here is that the file no longer
+				// exists, which is perfectly reasonable. Continue processing anyway.
+				return nil
+			}
 
-		if path == sandboxPath {
-			return nil
-		}
+			if path == sandboxPath {
+				return nil
+			}
 
-		ignored, err := IsIgnored(path)
-		if err != nil {
-			return err
-		}
+			ignored, err := IsIgnored(path)
+			if err != nil {
+				return err
+			}
 
-		if ignored && info.IsDir() {
-			return filepath.SkipDir
-		} else if ignored {
-			return nil
-		}
+			if ignored && info.IsDir() {
+				return filepath.SkipDir
+			} else if ignored {
+				return nil
+			}
 
-		meta, ok := oldMetaData.get(path, sandboxPath)
+			meta, ok := oldMetaData.get(path, sandboxPath)
 
-		// Metadata doesn't exist for this file, so it must be added
-		if !ok {
-			status.fileAdded(path, sandboxPath)
-			return nil
-		}
+			// Metadata doesn't exist for this file, so it must be added
+			if !ok {
+				status.fileAdded(path, sandboxPath)
+				return nil
+			}
 
-		if !info.IsDir() {
-			// The modified time is not a good enough check to see if the
-			//  file is modified or not.
-			//if meta.LastModified != info.ModTime().Unix() {
-			// Different sizes mean that the file has changed for sure
-			if meta.Size != info.Size() {
-				status.fileModified(meta, path, sandboxPath)
-			} else {
-				// Check the hashes
-				file, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				defer file.Close()
-
-				hash := sha1.New()
-				_, err = io.Copy(hash, file)
-
-				if err != nil {
-					return err
-				}
-
-				newHash := base64.StdEncoding.EncodeToString(hash.Sum(nil))
-
-				if meta.Hash != newHash {
+			if !info.IsDir() {
+				// The modified time is not a good enough check to see if the
+				//  file is modified or not.
+				// Different sizes mean that the file has changed for sure
+				if meta.Size != info.Size() {
 					status.fileModified(meta, path, sandboxPath)
+				} else {
+					// Check the hashes
+					file, err := os.Open(path)
+					if err != nil {
+						return err
+					}
+					defer file.Close()
+
+					hash := sha1.New()
+					_, err = io.Copy(hash, file)
+
+					if err != nil {
+						return err
+					}
+
+					newHash := base64.StdEncoding.EncodeToString(hash.Sum(nil))
+
+					if meta.Hash != newHash {
+						status.fileModified(meta, path, sandboxPath)
+					}
 				}
 			}
-			//}
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
 	}
 
 	// Walk the metadata to find any items that don't exist
